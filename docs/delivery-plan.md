@@ -8,9 +8,9 @@ Trạng thái: backlog cấp thiết kế. Chưa có lịch tuần do chưa bi�
 | --- | --- | --- |
 | P0: khám phá dữ liệu | Inventory nguồn, thống kê kích thước/format/metadata, query thật, quyền | Data inventory, Q01/Q02/Q05/Q07 có câu trả lời đủ cho thử nghiệm |
 | P1: thử nghiệm truy hồi | Mẫu đại diện, nhãn dev/test, so model và keyword/vector | Báo cáo semantic baseline, cấu hình có thể tái lập; thống nhất Q08 |
-| P2: nền tảng | Chốt ADR/toolchain, database/object storage, identity, migrations, CI | Import và search skeleton chạy được với fixtures, manifest/lockfile/README đầy đủ |
+| P2: nền tảng | Chốt DB quan hệ/toolchain, Qdrant collections/payload indexes, object storage, identity, migrations, CI | Import và search skeleton chạy được với fixtures, manifest/lockfile/README đầy đủ |
 | P3: pipeline dữ liệu | Batch jobs, lease/fencing, thumbnails, versioning, update/delete | Import phục hồi sau crash, replay an toàn, kiểm tra integrity |
-| P4: sản phẩm tìm kiếm | Search/filter/snapshot/detail/feedback và UI | FR01–FR09 có kiểm thử, demo hành trình đầy đủ |
+| P4: sản phẩm tìm kiếm | Search/filter/snapshot/detail/download, login/logout/account/admin và UI | FR01–FR06, FR08–FR13 có kiểm thử, demo hành trình đầy đủ |
 | P5: tải và vận hành | 100k/1M, filters/QPS, import đồng thời, restore/reindex | Báo cáo NFR, runbook đã thực hành, capacity/cost estimate |
 | P6: pilot | Nhóm người dùng thật, đánh giá lỗi và giới hạn | Quyết định phát hành dựa trên yêu cầu đã chốt, không còn blocker quyền/dữ liệu |
 
@@ -19,10 +19,10 @@ P0 dùng [biểu mẫu kiểm kê dữ liệu](data-inventory.md). P1 có thể 
 ## 2. Các hạng mục triển khai
 
 - DATA: inventory, sample có quyền, manifest revisions, metadata quality, label set.
-- CORE: identity adapter, grants, catalog/version schema, object storage adapter, audit.
-- INGEST: parser, jobs/leases, validate/decode, thumbnail, image batch encoder, retry/reconcile/purge.
+- CORE: users/roles/refresh registry, JWT login/refresh/logout, rotation/reuse và Origin/header policy, catalog/version schema, Qdrant client và payload schema/indexes, object storage adapter, audit.
+- INGEST: parser, jobs/leases, validate/decode, thumbnail, metadata snapshots, image batch encoder, transactional outbox, revisioned points, publish/retry/reconcile/purge.
 - SEARCH: query validation, text encoder, vector retriever, filters, optional lexical fusion, snapshots.
-- API/UI: hợp đồng lỗi, detail/media, import progress/retry, feedback và các trạng thái giao diện.
+- API/UI: hợp đồng lỗi, detail/media, import progress/retry, auth/download/account UI và các trạng thái giao diện.
 - EVAL/OPS: deterministic fixtures, integration tests, benchmark runner, metrics, backup/restore, reindex/cutover.
 
 Các nhóm là backlog logic, không chỉ định thêm agent hoặc microservice. Khi bắt đầu implementation, chia thành thay đổi nhỏ có đầu ra review được và validation phù hợp.
@@ -32,14 +32,18 @@ Các nhóm là backlog logic, không chỉ định thêm agent hoặc microservi
 | Yêu cầu | Thiết kế | Bằng chứng cần có |
 | --- | --- | --- |
 | FR01 | API search + query/retrieval | Unicode/blank/token limit và semantic benchmark |
-| FR02 | Catalog predicates + final scope check | Filters/permission integration tests, ANN với filters |
-| FR03 | Detail/media contract | Metadata đúng, access và URL expiry, UI review |
-| FR04 | Search session snapshot | Không lặp trang, cursor tamper/expiry, quyền thay đổi |
+| FR02 | Qdrant filters + catalog check | Filters là lựa chọn người dùng, cùng phạm vi toàn kho giữa các user |
+| FR03 | Detail/media contract | Khách xem thumbnail nhưng detail 401; login xong xem được, URL expiry |
+| FR04 | Search session snapshot | Không lặp trang, cursor owner/tamper/expiry, dữ liệu thay đổi |
 | FR05 | Manifest/import/jobs | Replay, crash recovery, progress totals |
 | FR06 | Versions/tombstone/purge | Update race, delete during inference, stale worker |
-| FR07 | Feedback/session items | Ownership/display checks, upsert và expiry |
+| FR07 | Loại khỏi MVP theo C07 | Không có feedback table/endpoint/UI; nhãn offline vẫn ở benchmark |
 | FR08 | Admin imports/items/retry | Phân quyền, retry all-or-nothing, safe error detail |
-| FR09 | Identity/grants/media | Kiểm thử xuyên collection mọi endpoint/cursor/media |
+| FR09 | Auth/RBAC, không image ACL | visitor bị chặn detail/download/admin; user bị chặn quản trị ảnh/tài khoản; admin quản trị cả hai; mọi người tìm cùng toàn kho |
+| FR10 | Login/me/access/refresh | JWT signature/claims, token types, expiry, single-use refresh/reuse/races, cookie flags/Origin/header, rate limit |
+| FR11 | Logout/logout-all | Refresh family và access token cũ bị từ chối, clear refresh cookie, idempotence và DB failure |
+| FR12 | Account/password/role/status | Auth_version, revoke refresh families, optimistic revision, last-admin race |
+| FR13 | Download | Khách 401; user mọi role tải mọi ảnh published, search không lộ URL gốc |
 | NFR01 | Scale plan | Mốc 100k và 1M thật đại diện |
 | NFR02 | Search admission/deadline | p95 ở QPS/hardware/filter đã chốt |
 | NFR03 | Semantic evaluation | Holdout report, subgroup metrics, Q08 đã chốt |
@@ -52,9 +56,9 @@ Chi tiết ở [PRD](prd.md), [API](api-contract.md), [ingestion](ingestion-desi
 
 ## 4. Chiến lược kiểm thử khi triển khai
 
-Unit test cho logic có rủi ro: validation, cursor signing, scope predicates, state transitions, version checks và fusion. Integration test với database/vector/storage adapter để kiểm chứng giao dịch, filters, lease và visibility. Mock external inference/network cho test thường xuyên; live benchmark chạy riêng trên dữ liệu được phép.
+Unit test cho logic có rủi ro: validation, cursor signing, role checks và public-search policy, state transitions, version checks và fusion. Integration test với DB quan hệ/Qdrant/storage adapters để kiểm chứng filters, lease, visibility và outbox replay. Bắt buộc kiểm tra crash sau Qdrant upsert trước SQL publish, write trễ sau delete, duplicate event, payload hash sai và restore lệch mốc; không giả định transaction xuyên hệ. Mock external inference/network cho test thường xuyên; live benchmark chạy riêng trên dữ liệu được phép.
 
-End-to-end tối thiểu: nhập ảnh → đợi ready → tìm → lọc → phân trang → xem detail → feedback → cập nhật → xóa → tìm lại không trả ảnh đó. Chạy thêm từ người dùng không có quyền, lỗi dependency và worker restart. Không kiểm tra chất lượng model bằng assertion trên vài ảnh rồi thay cho semantic benchmark.
+End-to-end tối thiểu: nhập ảnh → đợi ready → tìm → lọc → phân trang → khách detail/download bị yêu cầu login → login → xem detail/download → logout → cập nhật → xóa → tìm lại không trả ảnh đó. Chạy thêm user gọi admin bị từ chối, hai user dùng cùng toàn kho, access/refresh hết hạn, reuse/response loss/role đổi, lỗi dependency và worker restart. Không kiểm tra chất lượng model bằng assertion trên vài ảnh rồi thay cho semantic benchmark.
 
 Toolchain và lệnh test chưa cấu hình. Khi thêm source đầu tiên phải có formatter/linter, framework test thích hợp, manifest/lockfile và các lệnh chính xác trong README; không ghi lệnh giả đang được hỗ trợ.
 

@@ -1,6 +1,8 @@
 # Kế hoạch quy mô 100.000–1.000.000 ảnh
 
-Trạng thái: đề xuất kỹ thuật theo phạm vi người dùng đã xác nhận ngày 04/11/2026. Chưa có benchmark hoặc hệ thống được triển khai.
+Trạng thái: cập nhật ngày 05/11/2026. Kho riêng 100k–1M ảnh và Qdrant lưu vector/search metadata đã được xác nhận; cấu hình triển khai còn là đề xuất. Chưa có benchmark hoặc hệ thống được triển khai.
+
+Truy cập đã chốt: khách search và xem thumbnail; detail/download cần login; mọi user tìm/xem cùng toàn kho. Không có feedback trong MVP.
 
 ## 1. Phạm vi đã chốt
 
@@ -12,18 +14,11 @@ Một triệu ảnh chưa tự nó quyết định phải dùng hệ phân tán.
 
 ## 2. Lựa chọn hệ lưu trữ
 
-Giữ PostgreSQL + pgvector là ứng viên mặc định cho thử nghiệm đầu vì metadata và vector có thể cập nhật trong cùng giao dịch. Tổ chức module VectorRetriever để có thể thay implementation, nhưng không xây một lớp abstraction cho mọi tính năng của mọi nhà cung cấp.
+Qdrant là vector database đã chọn và lưu cả payload metadata tìm kiếm. DB quan hệ tách biệt giữ nghiệp vụ, tài khoản/role, jobs, outbox và published point pointers; PostgreSQL là ứng viên cho DB quan hệ. Không lưu embedding hoặc bản sao đầy đủ search metadata trong SQL. Xem [thiết kế Qdrant](qdrant-design.md).
 
-So sánh với PostgreSQL metadata + Qdrant nếu có nhu cầu lọc/vector phức tạp hoặc scale truy vấn vector độc lập. [Tài liệu pgvector](https://github.com/pgvector/pgvector) mô tả HNSW và lưu ý khi lọc kết quả; [tài liệu Qdrant indexing](https://qdrant.tech/documentation/concepts/indexing/) mô tả vector index và payload index cho bộ lọc.
+Benchmark tập trung chọn Qdrant topology, HNSW/search effort, payload indexes, RAM/disk và concurrency; không so sánh để quay lại pgvector. [Tài liệu Qdrant indexing](https://qdrant.tech/documentation/manage-data/indexing/) mô tả vector index và payload index cho bộ lọc.
 
-| Tiêu chí | PostgreSQL + pgvector | PostgreSQL + Qdrant |
-| --- | --- | --- |
-| Vận hành | Ít thành phần hơn | Thêm dịch vụ, backup và giám sát |
-| Nhất quán | Có thể cập nhật metadata/vector cùng giao dịch | Cần đồng bộ hai hệ |
-| Tách tải | Cần thiết kế tài nguyên/index và đo tranh chấp | Có thể cấp tài nguyên vector riêng |
-| Điều kiện chọn | Đạt SLO ở 1 triệu ảnh với chi phí phù hợp | Benchmark cho thấy lợi ích đủ bù độ phức tạp |
-
-Nếu dùng Qdrant: PostgreSQL giữ nguồn dữ liệu chuẩn; ghi thay đổi và outbox trong cùng transaction; worker upsert/delete vector theo image_id và content_version. Theo dõi độ trễ đồng bộ, xử lý tác vụ chạy lại và có reconciliation định kỳ. Search phải kiểm tra trạng thái/quyền hiện tại từ nguồn chuẩn trước khi trả ảnh; không chỉ tin payload đã đồng bộ.
+DB quan hệ ghi intent/outbox trong cùng transaction; worker upsert Qdrant với point revision bất biến rồi công bố pointer có điều kiện sau khi xác minh ghi/đọc. Search phải kiểm tra lifecycle/version/pointer từ DB quan hệ trước trả kết quả. Theo dõi sync lag, xử lý retry và reconciliation vì không có transaction xuyên hai hệ.
 
 HNSW là ứng viên cho truy vấn online. Exact search dùng để tạo baseline ANN recall trên một tập truy vấn có kiểm soát; không bắt buộc chạy exact cho mọi request. Chưa bật quantization hoặc chia shard trước khi benchmark chỉ ra lợi ích cần thiết.
 
@@ -58,17 +53,17 @@ Thời gian nhập tối thiểu có thể ước lượng T = N / throughput en
 
 Chạy hai mốc dữ liệu 100.000 và 1.000.000 ảnh thật đại diện. Có thể thử ở mốc nhỏ trước; nghiệm thu quy mô cần dữ liệu đủ đa dạng, không nhân bản vector của cùng một ảnh để thay thế.
 
-Ma trận tải đề xuất để khám phá: 1, 5 và 20 QPS; thay bằng tải mục tiêu khi có thông tin. Đây không phải yêu cầu người dùng đã xác nhận. Chạy cả truy vấn không lọc và có lọc, trường hợp tập hợp thỏa bộ lọc khoảng 50%, 10% và 1%, cùng bộ lọc quyền truy cập thực tế.
+Ma trận tải đề xuất để khám phá: 1, 5 và 20 QPS; thay bằng tải mục tiêu khi có thông tin. Đây không phải yêu cầu người dùng đã xác nhận. Chạy cả truy vấn không lọc và có lọc, trường hợp tập hợp thỏa bộ lọc khoảng 50%, 10% và 1%, cùng kịch bản search public, detail/download đã login. Collection là filter tùy chọn, không là quyền.
 
 Đo p50/p95/p99, lỗi, ANN Recall@K so với exact trên cùng phạm vi lọc, CPU/RAM/disk I/O, chi phí và thời gian build/rebuild index. Đo thêm khi import đang chạy, khi cache lạnh và khi sau restart. Công bố kết quả warm/cold riêng.
 
 Mục tiêu thử ban đầu: p95 API warm < 2 giây; ANN Recall@100 ≥ 95% so với exact. Đây là mục tiêu đề xuất để thảo luận, không phải kết quả đo hay thay thế đánh giá độ liên quan ngữ nghĩa. Chốt QPS, phần cứng, filters và tập truy vấn đi kèm trước nghiệm thu.
 
-Chọn phương án đơn giản nhất đạt đồng thời chất lượng, SLO và chi phí trên mốc một triệu ảnh. Nếu thử Qdrant, chạy với cùng vector, truy vấn, metric và ngân sách tài nguyên để so sánh có ý nghĩa.
+Chọn cấu hình Qdrant đơn giản nhất đạt đồng thời chất lượng, SLO và chi phí trên mốc một triệu ảnh. So sánh các cấu hình trên cùng vector, truy vấn, metric và ngân sách tài nguyên; đo cả số candidate bị catalog loại do chưa công bố/cũ và chi phí recheck DB quan hệ.
 
 ## 6. Thay model và phục hồi
 
-Tạo index/collection mới theo model_revision và processor_revision; giữ chỉ mục cũ phục vụ trong lúc tính lại embedding. Chụp mốc dữ liệu rồi bắt kịp cập nhật/xóa phát sinh trong quá trình reindex. Kiểm tra số lượng, content_version, quyền, truy vấn mẫu và chất lượng trước khi chuyển cấu hình đọc.
+Tạo index/collection mới theo model_revision và processor_revision; giữ chỉ mục cũ phục vụ trong lúc tính lại embedding. Chụp mốc dữ liệu rồi bắt kịp cập nhật/xóa phát sinh trong quá trình reindex. Kiểm tra số lượng, content_version, published pointers, truy vấn mẫu và chất lượng trước khi chuyển cấu hình đọc.
 
 Giữ index cũ trong khoảng rollback đã thỏa thuận; dự toán dung lượng cho hai phiên bản. Cần ghi rõ điểm rollback còn an toàn khi dữ liệu tiếp tục cập nhật.
 

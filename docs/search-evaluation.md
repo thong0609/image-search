@@ -1,6 +1,6 @@
 # Thiết kế tìm kiếm và kế hoạch đánh giá
 
-Trạng thái: đề xuất, chưa có số đo. Liên quan FR01–FR04, FR07, NFR01–NFR04.
+Trạng thái: đề xuất, chưa có số đo. Liên quan FR01–FR04, NFR01–NFR04. FR07 feedback đã bỏ; bộ nhãn benchmark offline vẫn cần thiết và không tạo tính năng feedback.
 
 ## 1. Baseline và các cấu hình so sánh
 
@@ -8,13 +8,15 @@ Baseline A: metadata keyword nếu có dữ liệu. Baseline B: image embeddings
 
 So sánh checkpoint CLIP và SigLIP 2 phù hợp tài nguyên; ghi revision chính xác, processor, dimension và normalization. Đây là ứng viên thử nghiệm, không phải lựa chọn model đã chốt. Đa ngôn ngữ phải được đo bằng truy vấn Việt thực tế; không suy diễn chất lượng từ tên model.
 
-Nguồn tham khảo: [Sentence Transformers image search](https://www.sbert.net/examples/sentence_transformer/applications/image-search/README.html), [SigLIP 2](https://arxiv.org/abs/2502.14786), [Google model card](https://huggingface.co/google/siglip2-base-patch16-224), [pgvector](https://github.com/pgvector/pgvector), [Qdrant fusion](https://qdrant.tech/documentation/hybrid-queries/).
+Qdrant là vector store đã chọn và giữ search metadata. Benchmark dùng chọn model, query/index configuration và topology; DB quan hệ không chạy nhánh tìm trên bản sao title/tags. Nhánh keyword nếu bật dùng khả năng lexical được cấu hình rõ trên Qdrant, không coi text filter là lexical ranker.
+
+Nguồn tham khảo: [Sentence Transformers image search](https://www.sbert.net/examples/sentence_transformer/applications/image-search/README.html), [SigLIP 2](https://arxiv.org/abs/2502.14786), [Google model card](https://huggingface.co/google/siglip2-base-patch16-224), [Qdrant indexing](https://qdrant.tech/documentation/manage-data/indexing/), [Qdrant fusion](https://qdrant.tech/documentation/hybrid-queries/).
 
 ## 2. Query và retrieval
 
 Chuẩn hóa Unicode NFC, trim khoảng trắng, giữ dấu và bản gốc; kiểm tra tokenizer trước inference. Không tự dịch hoặc mở rộng query trong baseline. Nếu thử dịch Việt→Anh, đánh giá như một cấu hình riêng với độ trễ và lỗi tên riêng.
 
-Filters do API validate chuyển thành predicates phía server. Truy vấn vector chạy trong phạm vi được phép; recheck catalog trước trả response. Nếu ANN trả thiếu do filter, có thể tăng search effort có giới hạn hoặc exact trên tập nhỏ theo query plan đã đo, không bỏ filter để có đủ số lượng.
+Filters do API validate chuyển thành predicates phía server. Truy vấn vector tìm toàn kho đã công bố; collection chỉ là filter tùy chọn, không dựa trên user/role. Recheck catalog/pointer trước trả response. Nếu ANN trả thiếu do filter, có thể tăng search effort có giới hạn hoặc exact trên tập nhỏ theo query plan đã đo, không bỏ filter để có đủ số lượng.
 
 Lấy 200 ứng viên cho snapshot là cấu hình đề xuất đầu; khi hybrid, thử lấy 200 mỗi nhánh trước fusion và cắt còn 200. Cần tăng retrieval effort phù hợp nếu dedup/threshold làm thiếu ứng viên. Limit UI không đồng nghĩa số ứng viên nội bộ.
 
@@ -32,7 +34,7 @@ Nếu thêm score threshold, chọn trên tập development, đo tỷ lệ chấ
 
 Bắt đầu với 100–200 truy vấn thật, tăng khi phạm vi ảnh đa dạng. Lấy mẫu theo nhóm: đối tượng/cảnh, thuộc tính kết hợp, tên/mã, chữ trong ảnh, phong cách nếu có nhu cầu, phủ định/đếm/quan hệ, không dấu, ngoài miền và không có đáp án. Đánh dấu truy vấn đòi khả năng ngoài phạm vi để phân tích riêng.
 
-Mỗi query có query_id, text, language, filters, intent_group, answerability, annotator_notes. Mỗi judgment có query_id, image_id, content_version, label, annotator_id và timestamp. Nhãn 0=sai, 1=một phần, 2=phù hợp. Metadata quyền giới hạn ảnh nào được đưa cho annotator.
+Mỗi query có query_id, text, language, filters, intent_group, answerability, annotator_notes. Mỗi judgment có query_id, image_id, content_version, label, annotator_id và timestamp. Nhãn 0=sai, 1=một phần, 2=phù hợp. Annotator dùng dataset đã được phép xử lý; nhãn nằm trong bộ đánh giá offline, không có bảng/API feedback trong sản phẩm.
 
 Pool ứng viên từ tất cả cấu hình được so sánh; randomize thứ tự khi gán nhãn để giảm thiên lệch. Hai người gán nhãn một phần dữ liệu và xử lý bất đồng trước khi mở rộng. Lưu version tập dữ liệu; không commit ảnh riêng hoặc query có dữ liệu nhạy cảm vào Git.
 
@@ -57,7 +59,7 @@ Ties trong exact/ANN được xử lý bằng quy tắc ID ổn định hoặc b
 
 Hai mốc 100k/1M ảnh đại diện. Tải khám phá 1/5/20 QPS, filters có tỷ lệ match khoảng 50%/10%/1%; thay bằng tải mục tiêu khi Q03 chốt. Chạy warm/cold riêng, import bật/tắt riêng, ghi thời lượng và số request; mỗi kịch bản warm đề xuất 5 phút ổn định rồi đo 15 phút, điều chỉnh để đủ mẫu p95/p99 đáng tin.
 
-Ghi p50/p95/p99, throughput thực, timeout/error rate, encode/search/metadata timings, RAM/VRAM, CPU, disk I/O và index build time. Load generator không được thành nút thắt. Không dùng vector nhân bản để thay cho kho ảnh đa dạng khi nghiệm thu.
+Ghi p50/p95/p99, throughput thực, timeout/error rate, encode/Qdrant/catalog recheck timings, RAM/VRAM, CPU, disk I/O, payload index size và index build time. Đo outbox lag, tỷ lệ candidate cũ/chưa công bố bị loại, thời gian sync/purge và ảnh hưởng của batch writes. Load generator không được thành nút thắt. Không dùng vector nhân bản để thay cho kho ảnh đa dạng khi nghiệm thu.
 
 Mục tiêu đề xuất: p95 warm < 2 giây và ANN Recall@100 ≥ 95%. Phải báo kèm QPS/phần cứng/filters; semantic quality, error budget và mức chênh lệch chấp nhận giữa các nhóm chờ chốt. Chưa thể tuyên bố MVP đạt yêu cầu khi các mục này còn trống.
 

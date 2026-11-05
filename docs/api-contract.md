@@ -2,9 +2,11 @@
 
 Trạng thái: đặc tả đề xuất v0.1, chưa phải API đã triển khai. Prefix `/v1`; JSON UTF-8; thời gian ISO 8601 UTC. Giới hạn cấu hình được nêu để review, không phải giá trị đã benchmark.
 
+Cập nhật 05/11/2026: search metadata đọc từ Qdrant payload; DB quan hệ kiểm tra lifecycle/published point và tài khoản/role theo chức năng. Thiết kế lưu trữ thay đổi không làm đổi public request/response dưới đây.
+
 ## 1. Quy ước chung
 
-Backend nhận danh tính từ identity adapter đã xác thực; nguồn danh tính chờ Q05. Không tin principal_id hoặc role tự khai trong JSON. Mọi endpoint kiểm tra collection grants. UUID được biểu diễn bằng chuỗi; timestamp và ID trong ví dụ là minh họa.
+Search/thumbnail public; detail/download cần access token hợp lệ; admin endpoints cần admin. Login/logout, account và role theo [auth-design.md](auth-design.md). Không có collection grants hoặc ACL theo ảnh. Không tin user_id hoặc role tự khai trong JSON. UUID được biểu diễn bằng chuỗi; timestamp và ID trong ví dụ là minh họa.
 
 Mỗi response có header `X-Request-ID`; body JSON có request_id. Request ID dùng truy vết HTTP; search_id nhận diện snapshot kết quả qua nhiều trang. Frontend không hiển thị raw similarity như xác suất.
 
@@ -27,9 +29,9 @@ Lỗi có cấu trúc:
 | HTTP | Code tiêu biểu | Hành vi client |
 | --- | --- | --- |
 | 400 | INVALID_CURSOR, INVALID_JSON | Sửa request; không retry nguyên trạng |
-| 401 | UNAUTHENTICATED | Xác thực lại |
-| 403 | FORBIDDEN_SCOPE | Kiểm tra quyền/filter collection |
-| 404 | RESOURCE_NOT_FOUND | Không tiết lộ image/import ngoài quyền bằng endpoint lấy theo ID |
+| 401 | UNAUTHENTICATED, ACCESS_TOKEN_EXPIRED, INVALID_ACCESS_TOKEN, TOKEN_REVOKED, INVALID_REFRESH_TOKEN, TOKEN_REUSE_DETECTED | Chỉ refresh với ACCESS_TOKEN_EXPIRED; các lỗi còn lại xử lý theo auth-design, không lặp vô hạn |
+| 403 | FORBIDDEN_ROLE, AUTH_ORIGIN_REJECTED | Kiểm tra role hoặc Origin/custom header của auth endpoints; không liên quan ACL ảnh |
+| 404 | RESOURCE_NOT_FOUND | Tài nguyên không tồn tại, chưa công bố hoặc đã xóa |
 | 409 | IDEMPOTENCY_CONFLICT, STALE_VERSION, JOB_NOT_RETRYABLE | Đọc lại trạng thái trước khi thao tác |
 | 410 | SEARCH_EXPIRED | Tìm lại từ trang đầu |
 | 422 | INVALID_QUERY, INVALID_FILTER, INVALID_MANIFEST, TOKEN_LIMIT_EXCEEDED | Hiển thị lỗi theo field |
@@ -41,7 +43,7 @@ Lỗi không đưa stack trace, đường dẫn nội bộ, token, credentials h
 
 ## 2. POST /v1/search
 
-Người có quyền viewer trên ít nhất một collection. Tạo phiên tìm kiếm mới.
+Public, không yêu cầu đăng nhập. Tạo snapshot tìm kiếm trên toàn bộ kho ảnh đã công bố. Search response chỉ có thumbnail, không có original/preview/download URL.
 
 ```json
 {
@@ -57,7 +59,7 @@ Người có quyền viewer trên ít nhất một collection. Tạo phiên tìm
 ```
 
 - query: bắt buộc, trim và chuẩn hóa Unicode NFC, 1–500 ký tự Unicode sau chuẩn hóa. Kiểm tra thêm giới hạn token của profile, không âm thầm cắt câu.
-- filters: tùy chọn; collection_ids nếu có phải là danh sách không rỗng, không trùng và đều được phép; không có thì dùng phạm vi hiện tại của người dùng. Không có collection được phép → 403.
+- filters: tùy chọn; collection_ids nếu có phải là danh sách ID phân loại không rỗng, không trùng; không có thì tìm toàn kho. Đây là lựa chọn lọc, không phải quyền. ID hợp lệ nhưng không có ảnh cho kết quả rỗng, không trả lỗi quyền.
 - orientation: landscape khi width > height; portrait khi height > width; square khi bằng nhau. Không dùng dung sai ngầm.
 - min_width/min_height: integer dương nếu có. Các filters kết hợp AND; collection_ids kết hợp OR trong chính danh sách.
 - limit: mặc định 20, từ 1 đến 50. Không nhận bộ lọc tenant/principal do client tự định nghĩa.
@@ -91,27 +93,25 @@ Title có thể null; không suy diễn caption. Kết quả rỗng hợp lệ: 
 
 ## 3. Phân trang: POST /v1/search với cursor
 
-Request tiếp theo chỉ chứa `cursor` và tùy chọn `limit`; không được đồng thời chứa query hoặc filters. Cursor được ký hoặc là token ngẫu nhiên opaque, ràng buộc search_id, principal và vị trí; TTL đề xuất 15 phút từ lúc tạo phiên. Client coi cursor là opaque, không tự giải mã/sửa.
+Request tiếp theo chỉ chứa `cursor` và tùy chọn `limit`; không được đồng thời chứa query hoặc filters. Cursor được ký hoặc là token ngẫu nhiên opaque, ràng buộc search_id, hash owner_key từ X-Search-Owner và vị trí; TTL đề xuất 15 phút từ lúc tạo phiên. Client coi cursor là opaque, không tự giải mã/sửa.
 
-Server lưu tối đa 200 ID/version đã xếp hạng mỗi phiên làm cửa sổ kết quả ban đầu. Mỗi trang kiểm tra lại quyền và trạng thái, bỏ item bị xóa, đổi version hoặc mất quyền, tiến tiếp trong snapshot để lấp trang. Không đưa ảnh mới vào snapshot. next_cursor=null khi hết cửa sổ, kể cả kho vẫn còn ảnh; UI chỉ nói đã hết kết quả của lượt tìm này.
+Server lưu tối đa 200 ID/version đã xếp hạng mỗi phiên làm cửa sổ kết quả ban đầu. Mỗi trang kiểm tra lại trạng thái/published point, bỏ item bị xóa, chưa công bố hoặc đổi version, tiến tiếp trong snapshot để lấp trang. Không đưa ảnh mới vào snapshot. next_cursor=null khi hết cửa sổ, kể cả kho vẫn còn ảnh; UI chỉ nói đã hết kết quả của lượt tìm này.
 
-Cùng cursor và limit trả cùng vị trí logic, nhưng response có thể ít item hơn khi quyền/dữ liệu thay đổi. URL được cấp mới theo request. Trang nối tiếp không lặp ID trong một chuỗi cursor. Cursor của principal khác hoặc bị sửa trả 400 INVALID_CURSOR; phiên hết hạn trả 410. TTL và cửa sổ được benchmark để cân bằng chi phí lưu session.
+Cùng cursor và limit trả cùng vị trí logic, nhưng response có thể ít item hơn khi dữ liệu thay đổi. Thumbnail URL được cấp mới theo request. Trang nối tiếp không lặp ID trong một chuỗi cursor. Cursor khác owner_key hoặc bị sửa trả 400 INVALID_CURSOR; snapshot hết hạn trả 410. TTL và cửa sổ được benchmark để cân bằng chi phí lưu snapshot. X-Search-Owner là giá trị ngẫu nhiên tối thiểu 128 bit client giữ trong memory và gửi trên request tạo/đọc snapshot; server lưu hash, không dùng làm filter ảnh. Thiếu/không đúng định dạng key trả 400 INVALID_SEARCH_OWNER; key không khớp cursor trả INVALID_CURSOR. Không có cookie/session đăng nhập cho search; khi login/logout bắt đầu snapshot mới, refresh access token không đổi owner key.
 
 ## 4. GET /v1/images/{image_id}
 
-Trả 200 với image metadata hiện tại: id, content_version, title, tags nếu có, width, height, mime_type, source, license nếu có, thumbnail_url, original_url, url_expires_at và request_id. Trả 404 nếu ảnh chưa sẵn sàng, đã xóa hoặc ngoài quyền. Không nhận content_version tùy ý để truy cập bản lịch sử trong MVP.
+Trả 200 với image metadata hiện tại: id, content_version, title, tags nếu có, width, height, mime_type, source, license nếu có, thumbnail_url, preview_url, url_expires_at và request_id. Bắt buộc Authorization: Bearer access_token, thiếu/không hợp lệ/hết hạn/đã thu hồi trả 401 với code cụ thể. Kiểm tra catalog rồi đọc payload từ đúng published point Qdrant; URL được tạo từ object references của version tương ứng. Trả 404 nếu ảnh chưa sẵn sàng, đã xóa. Catalog đã ready nhưng point mất/lỗi Qdrant trả 503 DEPENDENCY_UNAVAILABLE và kích hoạt đối soát, không giả thành 404 hoặc rỗng. Không nhận content_version tùy ý để truy cập bản lịch sử trong MVP.
 
-URL ký ngắn hạn, đề xuất tối đa 5 phút và giới hạn TTL theo tài nguyên. Trình duyệt có URL đã cấp có thể truy cập đến hết TTL; nếu nghiệp vụ đòi thu hồi tức thì phải dùng proxy kiểm tra quyền mỗi lần tải (Q05). API cấp mới luôn kiểm tra quyền.
+Thumbnail được cấp qua search mà không login. Preview và download URL chỉ cấp sau xác thực, tối đa 5 phút ở thiết kế đề xuất. Signed URL đã cấp có thể dùng/chia sẻ đến hết TTL; không đảm bảo login được kiểm tra mỗi lần storage nhận request. Nếu cần điều đó, chọn media proxy theo Q05. Bucket ảnh gốc không public.
 
-## 5. POST /v1/feedback
+## 5. POST /v1/images/{image_id}/download
 
-Body: search_id UUID, image_id UUID, relevance enum relevant/partially_relevant/irrelevant. Chỉ nhận cho item đã hiển thị trong search session của principal, đang còn quyền và trong thời hạn session. Nếu không tìm thấy quan hệ hợp lệ trả 404; hết hạn trả 410.
-
-Upsert theo (search_id, principal_id, image_id), 200 với request_id và saved=true. Retry không tạo bản ghi trùng; đổi lựa chọn cập nhật nhãn cũ. Không sửa thứ tự của phiên tìm kiếm hiện tại.
+Bắt buộc Authorization: Bearer access_token hợp lệ; refresh cookie không đủ quyền gọi endpoint này. 401 nếu chưa login; 404 nếu ảnh chưa công bố/đã xóa. Mọi tài khoản active được tải mọi ảnh đang hiển thị, không kiểm tra collection grants. Response 200 gồm request_id, download_url và expires_at; URL ký dành cho ảnh gốc với Content-Disposition attachment, TTL đề xuất tối đa 5 phút. Không trả object_key hoặc credential. Không có endpoint feedback trong MVP.
 
 ## 6. POST /v1/admin/imports
 
-Cần editor trên collection; bắt buộc Idempotency-Key. Body gồm collection_id, source_id, manifest_key. manifest_key là object trong vùng nhập đã đăng ký; không chấp nhận URL tùy ý hoặc đường dẫn máy chủ từ client. source_id phải thuộc collection_id.
+Cần role admin toàn hệ thống; bắt buộc Idempotency-Key. Body gồm collection_id, source_id, manifest_key. manifest_key là object trong vùng nhập đã đăng ký; không chấp nhận URL tùy ý hoặc đường dẫn máy chủ từ client. source_id phải thuộc collection_id.
 
 Manifest JSONL, mỗi dòng gồm source_item_key ổn định, input_revision integer tăng đơn điệu theo item, object_key thuộc nguồn được phép và metadata tùy chọn. Chi tiết validation ở [ingestion-design.md](ingestion-design.md). Revision nhỏ hơn bản đã nhận là superseded; cùng revision khác nội dung là conflict.
 
@@ -121,7 +121,7 @@ Manifest JSONL, mỗi dòng gồm source_item_key ổn định, input_revision i
 
 200 gồm request_id, import_id, status, total_items nullable khi đang parse, counts theo từng trạng thái, created_at, updated_at. Status: queued/parsing/running/completed/completed_with_errors/failed.
 
-GET `/v1/admin/imports/{import_id}/items?status=failed&limit=100&cursor=...` trả lỗi từng item theo ID tăng dần, cursor opaque; limit 1–100. Quản trị phải có quyền collection tương ứng; ngoài quyền trả 404. Error detail được làm sạch, không chứa dữ liệu bí mật.
+GET `/v1/admin/imports/{import_id}/items?status=failed&limit=100&cursor=...` trả lỗi từng item theo ID tăng dần, cursor opaque; limit 1–100. Cần admin; user thường trả 403, chưa login trả 401. Error detail được làm sạch, không chứa dữ liệu bí mật.
 
 ## 8. POST /v1/admin/imports/{import_id}/retry
 
@@ -131,16 +131,59 @@ Sửa ảnh hoặc metadata thực hiện qua import revision mới; không thê
 
 ## 9. DELETE /v1/admin/images/{image_id}
 
-Cần editor; ngoài phạm vi trả 404. Header If-Match bắt buộc chứa metadata_revision do admin đọc từ import item/catalog quản trị; thiếu trả 428 PRECONDITION_REQUIRED, lệch trả 409 STALE_VERSION. Response 202 có request_id, image_id, lifecycle=deleted, purge_status=pending và metadata_revision mới.
+Cần admin; user thường trả 403, chưa login trả 401. Header If-Match bắt buộc chứa metadata_revision do admin đọc từ import item/catalog quản trị; thiếu trả 428 PRECONDITION_REQUIRED, lệch trả 409 STALE_VERSION. Response 202 có request_id, image_id, lifecycle=deleted, purge_status=pending và metadata_revision mới.
 
 Tombstone có hiệu lực với response mới sau commit; response hoặc URL đã cấp trước đó có thể còn dùng tới TTL. Lặp delete với revision hiện tại là no-op 202; không tạo lại purge job. Purge vật lý theo retention và backlog, trạng thái được xem ở GET `/v1/admin/images/{image_id}`.
 
 ## 10. GET /v1/admin/images/{image_id}
 
-Cần editor trên collection. Trả trạng thái cả ảnh active và deleted: image_id, collection_id, lifecycle, current_version, desired_version, metadata_revision, processing_status, purge_status, updated_at, request_id; header ETag chứa metadata_revision dạng quoted string. Không có quyền trả 404.
+Cần admin. Trả trạng thái cả ảnh active và deleted: image_id, collection_id, lifecycle, current_version, desired_version, metadata_revision, processing_status, purge_status, updated_at, request_id; header ETag chứa metadata_revision dạng quoted string. Không đủ role trả 403; chưa login trả 401.
 
-## 11. Health và versioning
+## 11. Tài khoản và xác thực
 
-`GET /health/live`: kiểm tra process còn hoạt động, không chạm dependency; `GET /health/ready`: 200 khi instance phục vụ được, 503 nếu model/index/database chưa sẵn sàng. Health được giới hạn ở hạ tầng vận hành, không công khai topology hay credential.
+Visitor là khách không đăng nhập, không tạo users record hoặc nhận role visitor từ API quản trị. Các trường role trong POST/PATCH user chỉ nhận user/admin; giá trị khác trả 422 INVALID_ROLE; POST mặc định user nếu bỏ role.
+
+Theo [auth-design.md](auth-design.md), response tài khoản chỉ chứa id/email/display_name/role/status, revision và request_id; không trả hash hoặc refresh secret.
+
+Mọi API protected chỉ nhận access JWT qua Authorization: Bearer; không dùng refresh cookie để xác thực tài nguyên. Các auth endpoints dùng cookie (login/refresh/logout) yêu cầu Origin allowlist, JSON và X-Auth-Request: 1 theo auth-design. Không có GET /auth/csrf hoặc cookie session.
+
+| Endpoint | Hành vi | Quyền |
+| --- | --- | --- |
+| POST /v1/auth/login | email/password; 200 user + access_token/token_type/expires_in, Set-Cookie refresh; sai/disabled 401 INVALID_CREDENTIALS | Public, auth Origin/header policy |
+| POST /v1/auth/refresh | Body {}; refresh cookie; 200 access token mới và rotate refresh cookie; token sai/hết hạn 401 INVALID_REFRESH_TOKEN, reuse 401 TOKEN_REUSE_DETECTED và revoke family | Refresh cookie, auth Origin/header policy; không đòi access còn hạn |
+| GET /v1/auth/me | 200 user hiện tại hoặc 401 | Bearer access hợp lệ |
+| POST /v1/auth/logout | Body {}; revoke family từ refresh cookie, xóa cookie; 200 logged_out=true idempotent nếu thiếu/token không tồn tại; lỗi ghi revoke 503 | Auth Origin/header policy; access hết hạn vẫn logout được |
+| POST /v1/auth/logout-all | Body {}; tăng auth_version, revoke mọi family, xóa refresh cookie, 200 logged_out=true | Bearer access hợp lệ |
+| POST /v1/auth/change-password | current_password/new_password; 200, tăng auth_version, revoke mọi family, xóa refresh cookie; sai current 401 INVALID_CREDENTIALS | Bearer access hợp lệ |
+| POST /v1/admin/users | email/display_name/role/initial_password; 201 user; email trùng 409; không trả lại password | Bearer access, admin |
+| GET /v1/admin/users | limit 1–100/cursor; trả revision, không hash/token | Bearer access, admin |
+| PATCH /v1/admin/users/{id} | role/status/display_name; If-Match, thiếu 428/lệch 409; tăng auth_version và revoke families khi role/status đổi | Bearer access, admin |
+
+Ví dụ JSON login/refresh thành công (refresh token chỉ ở Set-Cookie, không trong JSON):
+
+```json
+{
+  "request_id": "req-auth-example",
+  "access_token": "<signed-access-jwt>",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "user": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "email": "user@example.com",
+    "display_name": "Người dùng",
+    "role": "user",
+    "status": "active",
+    "revision": 1
+  }
+}
+```
+
+Access TTL 900 giây và refresh family tuyệt đối 7 ngày là đề xuất. API kiểm tra chữ ký/claims, user active/auth_version và family chưa thu hồi trước protected action; JWT cũ không tiếp tục được dùng sau logout/đổi role theo chính sách này. Auth responses no-store; cookie refresh Secure/HttpOnly/SameSite=Strict/Path=/v1/auth. Không tự retry refresh sau response timeout vì token cũ có thể đã consumed; client phối hợp single-flight và login lại nếu mất kết quả rotation.
+
+Import/retry/delete và mọi API quản trị cần bearer access + role admin; không yêu cầu synchronizer CSRF token gắn session. PATCH user không được vô hiệu hóa admin active cuối cùng, lỗi 409 LAST_ADMIN_REQUIRED. Không tự bật đăng ký công khai/gửi email; quy trình cấp tài khoản/recovery chờ Q12. TTL, JWT signing/key rotation và cookie transport còn là đề xuất cần chốt khi triển khai.
+
+## 12. Health và versioning
+
+`GET /health/live`: kiểm tra process còn hoạt động, không chạm dependency; `GET /health/ready`: 200 khi instance phục vụ được, 503 nếu model, Qdrant collection/profile hoặc DB quan hệ chưa sẵn sàng. Health được giới hạn ở hạ tầng vận hành, không công khai topology hay credential.
 
 Thêm field response tùy chọn được coi là tương thích; đổi nghĩa, xóa field hoặc làm request cũ mất hợp lệ cần version mới. Khi bắt đầu code, chuyển hợp đồng này thành OpenAPI và kiểm tra ví dụ bằng schema; hiện chưa có endpoint nào chạy.

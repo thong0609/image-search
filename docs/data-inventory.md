@@ -17,7 +17,7 @@ Trạng thái: biểu mẫu có hướng dẫn để hoàn thiện với kho ả
 | Ngôn ngữ | Chưa xác nhận | Ngôn ngữ query và metadata | Model/tokenizer |
 | Trùng lặp | Chưa đo | Trùng byte và gần trùng báo riêng | Chất lượng kết quả |
 | Cập nhật/xóa | Chưa cung cấp | Số ảnh/ngày, đỉnh batch, revision nguồn | Incremental sync |
-| Phân quyền | Chưa cung cấp | Collection, nhóm người dùng, hạn chế chia sẻ | Grants/media |
+| Truy cập sản phẩm | Đã chốt | Khách search/thumbnail, login để detail/download; role quản trị toàn kho | Auth/RBAC và media |
 | Quyền xử lý | Chưa kiểm kê | Chủ sở hữu, license/provenance, hạn chế lưu/xử lý | Điều kiện đưa vào hệ thống |
 
 ## 2. Quy trình khảo sát đề xuất
@@ -38,7 +38,7 @@ Lưu kết quả thống kê tổng hợp trong báo cáo; giữ ảnh mẫu và
 | source_item_key | Có | ID ổn định trong một source, không đổi theo tên hiển thị |
 | input_revision | Có khi import | Integer dương tăng đơn điệu theo item, adapter cấp nếu cần |
 | object_key/version | Có | Nằm trong nguồn được phép, nội dung bất biến hoặc kiểm tra version |
-| collection | Có | Xác định phạm vi quản lý và truy cập |
+| collection | Có | Phân loại/bộ lọc; không giới hạn ảnh theo người dùng |
 | title | Không | Giữ nguyên tiếng Việt; không tự biến tên file thành mô tả đã xác minh |
 | tags | Không | Danh sách chuỗi, chuẩn hóa theo taxonomy sau khi lĩnh vực rõ |
 | license/provenance | Theo nguồn | Ghi đúng dữ liệu có chứng cứ, không suy đoán từ nội dung ảnh |

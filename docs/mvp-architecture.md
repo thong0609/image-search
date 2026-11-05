@@ -2,6 +2,10 @@
 
 Ngày phân tích: 04/11/2026. Trạng thái: đề xuất, chưa chốt triển khai.
 
+Cập nhật 05/11/2026: đã chọn Qdrant lưu vector và search metadata, tách khỏi DB quan hệ; không dùng pgvector. Công nghệ DB quan hệ và cấu hình triển khai vẫn là đề xuất.
+
+Cập nhật truy cập: không feedback và không ACL theo ảnh/collection; khách search/thumbnail, detail/download cần login. Xem [thiết kế tài khoản](auth-design.md).
+
 Đây là phân tích tổng quan. Thiết kế chi tiết và quy tắc nguồn chuẩn của từng phần được tập hợp tại [mục lục tài liệu](README.md).
 
 ## 1. Định hướng và các giả định
@@ -32,7 +36,7 @@ Khuyến nghị khởi đầu bằng một ứng dụng backend chia module và 
 - Trả thumbnail, mô tả nếu có, nguồn ảnh và liên kết xem chi tiết; phân trang với số kết quả tối đa được kiểm soát.
 - Bộ lọc dựa trên metadata đáng tin: bộ sưu tập, hướng ảnh, kích thước, loại ảnh hoặc quyền sử dụng khi dữ liệu có sẵn.
 - Công cụ quản trị nhập ảnh theo batch, theo dõi trạng thái và chạy lại tác vụ lỗi.
-- Ghi nhận phản hồi liên quan/không liên quan cùng cấu hình tìm kiếm để đánh giá.
+- Login/refresh/logout bằng access/refresh token, role user/admin; khách tìm/xem thumbnail, detail/download cần login. Không có feedback trong MVP.
 - Trạng thái rõ ràng khi truy vấn sai, không có kết quả đủ phù hợp hoặc dịch vụ gặp lỗi.
 
 Để sau MVP: tìm bằng ảnh, kết hợp ảnh và văn bản, cá nhân hóa, fine-tune, crawl web diện rộng, hội thoại nhiều lượt và reranker tốn tài nguyên.
@@ -49,7 +53,7 @@ Phân biệt ba nguồn tín hiệu:
 
 1. Embedding trực tiếp từ ảnh: phục vụ nội dung thị giác và tạo nền cho image-to-image.
 2. Tiêu đề, tag, OCR, caption: giúp tìm tên riêng, mã sản phẩm hoặc chữ xuất hiện trong ảnh.
-3. Metadata có cấu trúc: áp dụng ràng buộc chính xác như ảnh ngang, bộ sưu tập, quyền truy cập.
+3. Metadata có cấu trúc: áp dụng ràng buộc chính xác như ảnh ngang, bộ sưu tập và kích thước; không ACL theo ảnh/collection.
 
 Không chỉ tạo caption rồi tìm trên caption: chi tiết bị bỏ sót khi mô tả sẽ khó được tìm lại. Caption và OCR có thể bổ sung sau khi phân tích lỗi chỉ ra nhu cầu.
 
@@ -62,16 +66,16 @@ flowchart LR
     U[Người dùng] --> UI[Web UI]
     UI --> API[Search API]
     API --> TE[Text encoder]
-    TE --> DB[(PostgreSQL và pgvector)]
-    API --> DB
-    DB --> R[Hợp nhất và xếp hạng]
+    TE --> QD[(Qdrant: vector và payload)]
+    API --> DB[(DB quan hệ: catalog và quyền)]
+    QD --> R[Hợp nhất và xếp hạng]
     R --> API
     API --> UI
     UI --> STORE[(Object storage: ảnh và thumbnail)]
     ADMIN[Nhập ảnh theo batch] --> JOB[(Bảng tác vụ)]
     JOB --> W[Worker]
     W --> IE[Image encoder]
-    IE --> DB
+    IE --> QD
     W --> STORE
     W --> DB
 ```
@@ -81,16 +85,15 @@ Các khối là trách nhiệm logic, không bắt buộc mỗi khối là một
 | Thành phần | Lựa chọn đề xuất | Lý do |
 | --- | --- | --- |
 | Backend và worker | Python; FastAPI là một ứng viên | Thuận tiện tích hợp xử lý ảnh và mô hình |
-| Metadata và vector | PostgreSQL + pgvector | Giảm số hệ thống phải vận hành |
+| Vector và search metadata | Qdrant, đã chọn | Vector và payload filters cùng hệ tìm kiếm |
+| Dữ liệu nghiệp vụ | DB quan hệ; PostgreSQL là ứng viên | Danh tính, quyền, lifecycle, jobs/outbox, refresh token registry, search snapshots và audit |
 | Ảnh gốc và thumbnail | Object storage tương thích S3 | Tách ảnh khỏi cơ sở dữ liệu truy vấn |
 | Xử lý nền | Bảng jobs trong PostgreSQL, claim theo batch | Theo dõi tiến độ và phục hồi; chỉ thêm queue riêng khi đo được nhu cầu |
 | Giao diện | React/TypeScript nếu phù hợp năng lực nhóm | Có thể thay bằng stack nhóm quen thuộc |
 
-Đây là lựa chọn kiến trúc đề xuất, chưa phải stack đã được cài đặt. Khi viết code đầu tiên cần thêm manifest, lockfile, formatter, linter, framework test và hướng dẫn chạy chính xác.
+Qdrant và ranh giới vector DB/DB quan hệ đã được người dùng chốt; các thành phần/cấu hình khác còn là đề xuất, chưa có stack cài đặt. Khi viết code đầu tiên cần thêm manifest, lockfile, formatter, linter, framework test và hướng dẫn chạy chính xác.
 
-[pgvector](https://github.com/pgvector/pgvector) hỗ trợ truy vấn chính xác và các chỉ mục gần đúng như HNSW. Với phạm vi đến một triệu ảnh, dùng HNSW làm ứng viên cho phục vụ truy vấn và exact search làm baseline kiểm tra recall trên một tập truy vấn. Kiểm tra truy vấn có bộ lọc vì tìm gần đúng kết hợp lọc có thể thiếu kết quả. Hiệu năng phải được đo trên cả dữ liệu 100.000 và 1.000.000 ảnh.
-
-Cân nhắc Qdrant khi benchmark thực tế cho thấy cần scale truy vấn vector độc lập hoặc pipeline truy vấn nhiều nhánh phức tạp. Không chọn cơ sở dữ liệu chỉ dựa trên số ảnh; còn phụ thuộc số chiều vector, bộ lọc, RAM, QPS và mục tiêu recall.
+Qdrant lưu vector và payload metadata để tìm/lọc/hiển thị ảnh; HNSW phục vụ truy vấn và exact search làm baseline kiểm tra ANN recall. Payload fields có index theo nhu cầu. Hiệu năng phải đo trên cả 100.000 và 1.000.000 ảnh, bao gồm bộ lọc và kiểm tra catalog. Thiết kế đồng bộ bắt buộc dùng outbox, point có version và reconciliation; chi tiết ở [thiết kế Qdrant](qdrant-design.md).
 
 ## 5. Luồng nhập dữ liệu
 
@@ -98,7 +101,7 @@ Cân nhắc Qdrant khi benchmark thực tế cho thấy cần scale truy vấn v
 2. Lưu ảnh gốc, tạo thumbnail, tính checksum và lấy width/height.
 3. Tạo tác vụ với khóa chống xử lý lặp theo ảnh, phiên bản nội dung và phiên bản pipeline.
 4. Worker chạy đúng processor của model, mã hóa ảnh và chuẩn hóa vector nếu cấu hình similarity yêu cầu.
-5. Ghi embedding, phiên bản model và trạng thái ready. Chỉ ảnh sẵn sàng, còn hiệu lực và được phép xem mới vào kết quả.
+5. Ghi intent/outbox, upsert vector/payload Qdrant và xác minh, rồi công bố pointer/version có điều kiện trong DB quan hệ. Chỉ ảnh đã công bố, còn hiệu lực và được phép xem mới vào kết quả.
 6. Retry có giới hạn với lỗi tạm thời; lỗi vĩnh viễn được lưu để quản trị xử lý.
 
 Checksum xử lý trùng byte; ảnh resize hoặc crop cần kiểm tra gần trùng riêng nếu chúng làm giảm chất lượng kết quả. Không tự động xóa mọi ảnh gần giống.
@@ -111,12 +114,12 @@ Worker cần claim job an toàn khi chạy đồng thời, có lease/timeout đ�
 2. Giữ truy vấn gốc, chuẩn hóa Unicode và khoảng trắng mà không xóa tùy tiện dấu tiếng Việt.
 3. Text encoder tạo vector với model tương thích với chỉ mục ảnh.
 4. Lấy ứng viên bằng vector, áp dụng phạm vi truy cập và bộ lọc trong truy vấn. Nếu có metadata văn bản hữu ích, chạy thêm nhánh từ khóa.
-5. Hợp nhất hai danh sách bằng RRF làm baseline; không cộng trực tiếp các score khác thang đo. Áp dụng lại quyền truy cập ở mọi nhánh và khi lấy thông tin chi tiết.
+5. Hợp nhất hai danh sách bằng RRF làm baseline; không cộng trực tiếp các score khác thang đo. Search không lọc theo tài khoản. Detail/download kiểm tra login; mọi user active dùng cùng toàn kho.
 6. Giảm kết quả trùng lặp, trả thumbnail và metadata; log thời gian từng bước cùng phiên bản cấu hình.
 
 Ví dụ cấu hình để thử nghiệm: lấy 200 ứng viên mỗi nhánh, tạo snapshot tối đa 200 kết quả, mặc định trả 20 kết quả mỗi trang. Cần benchmark để điều chỉnh; hợp đồng chi tiết ở [API](api-contract.md), đây không phải thông số tối ưu đã được chứng minh.
 
-[PostgreSQL Full Text Search](https://www.postgresql.org/docs/current/textsearch-intro.html) cung cấp cơ chế lập chỉ mục và tìm trên trường văn bản. Cần kiểm thử tokenization tiếng Việt và mã hàng; không mặc định cấu hình tiếng Anh sẽ phù hợp. [Qdrant Query API](https://qdrant.tech/documentation/hybrid-queries/) là tài liệu tham khảo cho fusion và tìm nhiều giai đoạn nếu sau này dùng Qdrant.
+[Qdrant Query API](https://qdrant.tech/documentation/hybrid-queries/) là tài liệu tham khảo cho fusion và tìm nhiều giai đoạn. Cần kiểm thử tokenization tiếng Việt và mã hàng khi thêm nhánh keyword; full-text filtering không tự thay thế lexical ranking. Search metadata được lưu ở Qdrant, không lập bản sao metadata trong SQL chỉ để phục vụ tìm kiếm.
 
 Cosine similarity không phải xác suất phù hợp. Khi dữ liệu không có ảnh đúng, nearest-neighbor vẫn trả ảnh gần nhất; cần hiệu chỉnh ngưỡng theo tập đánh giá hoặc thể hiện rõ mức phù hợp hạn chế. Không đặt một ngưỡng chung rồi dùng cho mọi model.
 
@@ -137,20 +140,21 @@ Khóa checkpoint/revision, processor, số chiều, normalization và distance m
 
 | Thực thể | Trường chính |
 | --- | --- |
-| images | id, collection_id, object_key, thumbnail_key, checksum, width, height, source, source_id, license, access_scope, content_version, status, deleted_at |
-| image_metadata | image_id, title, tags, caption, ocr_text, provenance |
-| image_embeddings | image_id, content_version, model_revision, processor_revision, dimension, normalization, distance_metric, embedding |
+| images và image_versions trong DB quan hệ | id, collection_id phân loại, source identity, object/snapshot references, content_version, lifecycle, deleted_at; search metadata ở Qdrant |
+| Qdrant points | point_id, vector, payload image_id/content_version/collection_id/title/tags/kích thước/source/license; caption/ocr_text nếu có |
+| search_projections và published_projections trong DB quan hệ | image_id, content_version, generation_id, projection_revision, point_id, hash, trạng thái; không chứa vector/search payload |
 | ingestion_jobs | id, image_id, pipeline_version, status, attempt_count, lease_until, last_error |
 | search_events | request_id, query theo chính sách lưu dữ liệu, filters, model_revision, ranking_version, result_ids, latency |
-| feedback | request_id, image_id, relevance, timestamp |
+| users, refresh_token_families và refresh_tokens | email/password_hash/role/status/auth_version; refresh hash/family/expiry/consumed/revoked; không có auth_sessions hoặc feedback |
 
 Đây là mô hình logic; schema vật lý phải bảo đảm mỗi chỉ mục chỉ chứa vector tương thích. Phiên bản cũ cần được vô hiệu hóa khi ảnh sửa hoặc xóa. Không đặt credential hoặc signed URL dài hạn trong metadata.
 
 Hợp đồng API dự kiến:
 
 - `POST /v1/search`: query, filters, limit, cursor; trả request_id, items và next_cursor.
-- `GET /v1/images/{id}`: metadata và URL xem ảnh theo quyền truy cập.
-- `POST /v1/feedback`: ghi nhận đánh giá theo search_id và image_id; request_id dùng truy vết HTTP.
+- `GET /v1/images/{id}`: metadata và preview URL cho user đã login.
+- `POST /v1/auth/login`, `/refresh`, `/logout`, `GET /v1/auth/me`: tài khoản và vòng đời access/refresh token.
+- `POST /v1/images/{id}/download`: yêu cầu login, cấp URL tải ngắn hạn.
 - `POST /v1/admin/imports`: tạo tác vụ nhập, trả job_id.
 - `GET /v1/admin/imports/{id}`: xem tiến độ và lỗi.
 
@@ -173,17 +177,17 @@ Gán nhãn theo thang 0 = sai, 1 = liên quan một phần, 2 = phù hợp. Lấ
 
 Không báo semantic Recall@K nếu chưa có đủ nhãn về các ảnh liên quan trong kho. Không tính chỉ số độ liên quan thông thường cho truy vấn hoàn toàn không có đáp án; đánh giá khả năng nhận diện trường hợp đó riêng.
 
-Khi triển khai, test tự động bằng fixtures và external-call mocks cho query handling, truy vấn rỗng/sai, không có kết quả, lỗi model/database/storage, lọc quyền truy cập, tác vụ chạy lại và dữ liệu bị xóa. Có integration test cho truy vấn vector, filters và tương thích phiên bản. Đo chất lượng truy hồi bằng benchmark riêng, không thay bằng unit test.
+Khi triển khai, test tự động bằng fixtures và external-call mocks cho query handling, truy vấn rỗng/sai, không có kết quả, lỗi model/database/storage, login/logout, role quản trị, public search/thumbnail, detail/download cần login, tác vụ chạy lại và dữ liệu bị xóa. Có integration test cho truy vấn vector, filters và tương thích phiên bản. Đo chất lượng truy hồi bằng benchmark riêng, không thay bằng unit test.
 
 ## 10. Vận hành và chi phí
 
-Theo dõi riêng độ trễ encode, truy vấn database và lấy metadata; đo backlog, job failures, tỷ lệ lỗi và chất lượng mẫu sau mỗi lần đổi cấu hình. Khi thêm cache, khóa cache phải bao gồm query, filters, phạm vi truy cập và phiên bản index/model.
+Theo dõi riêng độ trễ encode, truy vấn database và lấy metadata; đo backlog, job failures, tỷ lệ lỗi và chất lượng mẫu sau mỗi lần đổi cấu hình. Khi thêm cache, khóa cache tìm kiếm bao gồm query, filters và phiên bản index/model, không có user scope. Không cache chung response detail/download chứa URL đã cấp sau login.
 
 Ước lượng bộ nhớ vector thô: N × d × bytes mỗi phần tử. Với 768 chiều, float32, một vector mỗi ảnh: 100.000 ảnh cần khoảng 293 MiB; 1.000.000 ảnh cần khoảng 2,86 GiB. Chưa gồm HNSW, metadata, model, database overhead, bản sao và nhiều phiên bản vector; không dùng con số này làm tổng RAM triển khai. Chi tiết các giả định về dung lượng ảnh và thời gian nhập nằm trong [kế hoạch quy mô](scale-plan.md).
 
 Tổng chi phí cần tính cả lưu ảnh gốc/thumbnail, egress, database, batch embedding, inference truy vấn, backup, giám sát và công vận hành. Quyết định CPU/GPU sau khi đo tốc độ nhập và p95 truy vấn trên máy mục tiêu. Không có báo giá cloud cố định khi chưa có dung lượng ảnh và lưu lượng.
 
-Kho riêng cần kiểm soát quyền ở tìm kiếm và tải ảnh, có quy trình xóa ảnh/embedding/cache, và giới hạn thời gian lưu query log. Nếu hỗ trợ tải từ URL, cần kiểm soát SSRF. Khi thêm upload ảnh, giới hạn byte, số pixel và định dạng trước khi giải mã.
+Kho riêng là nguồn ảnh do hệ thống quản lý, không đồng nghĩa hạn chế search theo người. Search/thumbnail public; detail/download cần login và quản trị cần role. Cần có quy trình xóa ảnh/embedding/cache, và giới hạn thời gian lưu query log. Nếu hỗ trợ tải từ URL, cần kiểm soát SSRF. Khi thêm upload ảnh, giới hạn byte, số pixel và định dạng trước khi giải mã.
 
 ## 11. Mở rộng tìm bằng ảnh
 
@@ -198,7 +202,7 @@ Với ảnh + văn bản, đánh giá chiến lược fusion hoặc model chuyê
 1. Giữ phạm vi kho riêng 100.000–1.000.000 ảnh; chốt người dùng, lĩnh vực, quyền sử dụng, QPS và ví dụ truy vấn; hoàn thành PRD ngắn cùng data inventory.
 2. Làm thử nghiệm retrieval trên dữ liệu đại diện; so sánh model, tiếng Việt, vector-only và metadata-only; xác lập baseline chất lượng và hiệu năng.
 3. Chốt architecture decision records cho model, storage, database, ingestion và tiêu chí nghiệm thu.
-4. Xây MVP có import, UI/API tìm kiếm, filters, feedback và xử lý lỗi; triển khai thử với nhóm nhỏ.
+4. Xây MVP có import, UI/API tìm kiếm, filters, login/logout, detail/download và xử lý lỗi; triển khai thử với nhóm nhỏ.
 5. Phân tích truy vấn thất bại; chỉ thêm hybrid, OCR/caption hoặc reranking khi dữ liệu đánh giá cho thấy cần thiết.
 6. Mở rộng tìm bằng ảnh sau khi chất lượng và vận hành text-to-image đạt tiêu chí đã thống nhất.
 
