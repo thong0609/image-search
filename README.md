@@ -1,22 +1,18 @@
 # Images-search
 
-Định hướng hệ thống tìm ảnh theo yêu cầu bằng văn bản ở MVP, dùng kho ảnh riêng với quy mô 100.000–1.000.000 ảnh. Sau MVP có thể mở rộng tìm bằng ảnh và tích hợp nguồn ảnh bên ngoài.
+Dự án tìm ảnh địa danh bằng tiếng Việt. Truy vấn hỗ trợ một địa danh, nhiều địa danh trong cùng câu, và suy luận qua quan hệ địa lý. Ảnh được thu thập từ nguồn web đã cấu hình rồi nhập vào kho; search chỉ dùng nội dung đã kiểm chứng và công bố.
 
-Kiến trúc tìm kiếm cập nhật 06/11/2026: **vector search + keyword search + graph search → hợp nhất ứng viên → VLM rerank → snapshot kết quả**. CLIP/SigLIP 2 là ứng viên encoder; checkpoint VLM, graph engine và cấu hình xếp hạng chưa chốt. Xem [thiết kế graph search và VLM reranking](docs/graph-reranking-design.md) với sơ đồ phân cấp và luồng dữ liệu.
+Kiến trúc tìm kiếm: vector + keyword + graph → hợp nhất theo từng mục tiêu → VLM rerank → kết quả có nhóm và nguồn. CLIP/SigLIP 2, graph engine và VLM endpoint cụ thể vẫn cần benchmark.
 
-Repository hiện ở giai đoạn phân tích, chưa có ứng dụng hoặc toolchain. Chưa có lệnh cài đặt, chạy, build, lint hay test được cấu hình.
-
-Lựa chọn dữ liệu đã chốt: **Qdrant lưu vector và metadata phục vụ tìm kiếm**, tách khỏi **DB quan hệ lưu nghiệp vụ và quyền**. PostgreSQL là đề xuất cho DB quan hệ; không dùng pgvector. Ảnh và metadata snapshots phục vụ phục hồi nằm trong object storage.
-
-Truy cập: **khách được tìm kiếm và xem danh sách/thumbnail; mở chi tiết hoặc download cần đăng nhập**. Mọi tài khoản dùng cùng toàn kho; Ba vai trò là **visitor, user, admin**; visitor là khách không có tài khoản/phiên đăng nhập, admin quản trị cả ảnh và tài khoản. Login dùng **access token + refresh token**, không dùng session đăng nhập. Feedback chưa nằm trong MVP.
+Đã chốt: FastAPI, PostgreSQL, Qdrant; một người phát triển; local Intel Raptor Lake-P với RAM chia sẻ 16 GB, có thể gọi VLM API ngoài. Schema SQL gồm 9 bảng. Chưa có code hoặc lệnh build/test.
 
 ## Tài liệu
 
-- [Mục lục bộ tài liệu phân tích và thiết kế](docs/README.md): PRD, thiết kế hệ thống, dữ liệu, API, pipeline nhập ảnh, tài khoản/login/logout, đánh giá, vận hành, kế hoạch và sổ quyết định.
-- [Đề xuất MVP, kiến trúc và kế hoạch đánh giá](docs/mvp-architecture.md).
-- [Kế hoạch quy mô 100.000–1.000.000 ảnh](docs/scale-plan.md).
-- [Thiết kế Qdrant và đồng bộ với DB quan hệ](docs/qdrant-design.md).
-- [Thiết kế tài khoản và phân quyền chức năng](docs/auth-design.md).
-- `AGENTS.md`: quy ước làm việc trong repository.
+- [Kế hoạch MVP địa danh](docs/landmark-mvp-plan.md): phạm vi, crawler, metadata và giả định local.
+- [Lộ trình triển khai theo giai đoạn](docs/delivery-plan.md): đầu ra và cổng hoàn tất mỗi phase.
+- [PRD](docs/prd.md): yêu cầu và phạm vi sản phẩm.
+- [Quyết định](docs/decisions.md): điều đã chốt và câu hỏi còn mở.
+- [Thiết kế hệ thống](docs/system-design.md) và [API](docs/api-contract.md).
+- [Mô hình dữ liệu 9 bảng](docs/data-model.md), [Qdrant](docs/qdrant-design.md), [pipeline nhập ảnh](docs/ingestion-design.md), [graph/VLM](docs/graph-reranking-design.md), [auth](docs/auth-design.md) và [vận hành](docs/operations.md).
 
-Nguồn ảnh riêng, khoảng quy mô và lựa chọn Qdrant đã được xác nhận. Việc bổ sung graph search và VLM rerank đã được xác nhận; engine DB quan hệ, graph engine và các công nghệ/cấu hình cụ thể vẫn là đề xuất; lĩnh vực ảnh, tải truy vấn, ngân sách và yêu cầu nghiệp vụ cần được xác nhận trước khi chốt triển khai.
+Chưa có dataset, benchmark, crawler hay model chạy thực tế.

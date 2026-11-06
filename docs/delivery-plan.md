@@ -1,82 +1,30 @@
-# Kế hoạch triển khai và truy vết yêu cầu
+# Lộ trình chia giai đoạn
 
-Trạng thái: backlog cấp thiết kế. Chưa có lịch tuần do chưa biết nhân lực/deadline (Q10). Chuyển giai đoạn theo bằng chứng đầu ra, không theo việc đã viết xong code.
+**Mục tiêu:** xây hệ tìm ảnh địa danh tiếng Việt từ nguồn web, hỗ trợ tìm một địa danh, nhiều địa danh trong một câu và truy vấn qua quan hệ; dùng vector, keyword, graph và VLM rerank.
 
-## 1. Các giai đoạn
+Đã chốt: một người phát triển, FastAPI, PostgreSQL, Qdrant; local Intel Raptor Lake-P với RAM chia sẻ 16 GB; cho phép VLM API ngoài. Chưa có code hoặc dataset. Các phase là cổng theo kết quả, không phải lịch tuần. Không chuyển sang đợt crawl lớn chỉ vì đã xong một endpoint.
 
-| Giai đoạn | Công việc | Đầu ra và điều kiện chuyển |
-| --- | --- | --- |
-| P0: khám phá dữ liệu | Inventory nguồn, thống kê kích thước/format/metadata, query thật, quyền | Data inventory, Q01/Q02/Q05/Q07 có câu trả lời đủ cho thử nghiệm |
-| P1: thử nghiệm truy hồi | Mẫu đại diện, nhãn dev/test, so encoder, keyword/vector, graph ablation và VLM rerank | Báo cáo semantic baseline, cấu hình có thể tái lập; thống nhất Q08, Q13–Q15 cho cấu hình đầy đủ |
-| P2: nền tảng | Chốt DB quan hệ/toolchain, Qdrant collections/payload indexes, graph storage adapter/schema, VLM inference adapter, object storage, identity, migrations, CI | Import và search skeleton chạy được với fixtures, manifest/lockfile/README đầy đủ |
-| P3: pipeline dữ liệu | Batch jobs, lease/fencing, thumbnails, graph artifacts, dual projection publish, shared relations, versioning, update/delete | Import phục hồi sau crash, replay an toàn, kiểm tra integrity |
-| P4: sản phẩm tìm kiếm | Vector/keyword/graph retrieval, fusion, VLM rerank, strict/fallback, search/filter/snapshot/detail/download, login/logout/account/admin và UI | FR01–FR06, FR08–FR15 có kiểm thử, demo hành trình đầy đủ |
-| P5: tải và vận hành | 100k/1M, filters/QPS, import đồng thời, restore/reindex | Báo cáo NFR, runbook đã thực hành, capacity/cost estimate |
-| P6: pilot | Nhóm người dùng thật, đánh giá lỗi và giới hạn | Quyết định phát hành dựa trên yêu cầu đã chốt, không còn blocker quyền/dữ liệu |
+| Phase | Mục tiêu | Đầu ra | Cổng hoàn tất |
+|---|---|---|---|
+| 0. Scaffold | Tạo nền local có thể chạy và phát triển | FastAPI, PostgreSQL, Qdrant, 9 bảng, cấu hình local, logging, migration, formatter/linter/test toolchain, API/worker skeleton | Có thể khởi động lại local theo README; fixture image đi qua health check; secrets không vào Git |
+| 1. Dataset và truy vấn | Có dữ liệu dùng để đánh giá địa danh | Chọn một nguồn/seed nhỏ; query Việt thật; ảnh, source URL, attribution/license, entity/place link và manifest có provenance | Mẫu 400–1.500 ảnh tối đa đã được kiểm tra, dedup; nhãn query có single/multi-target/multi-hop và no-answer; facts đủ nguồn |
+| 2. Crawler và ingestion | Nhập web sample vào kho an toàn, có thể tiếp tục sau lỗi | Một source adapter; crawl jobs/checkpoint; URL/redirect/DNS/size/rate limits; object storage local; thumbnail/hash/dedup; import/vector/graph publish | Crawler resume/retry được; chỉ ảnh có metadata/nguồn hợp lệ searchable; deleted/stale item không xuất hiện; crawl không nằm trên search path |
+| 3. Single-target retrieval | Hoàn thiện baseline tìm một địa danh | Keyword và vector retrieval; benchmark CLIP so với SigLIP 2 trên CPU; filters; API kết quả có source/attribution | Bộ test Vietnamese single/no-answer có nhãn; chọn baseline bằng chất lượng, latency và RAM đo được; không quyết theo model name |
+| 4. Multi-target | Trả riêng từng địa danh trong một câu | Query planner tách và resolve targets; ví dụ Hạ Long/Cát Bà; budget chung; nhóm kết quả và trạng thái thiếu kết quả | Mỗi target nhận ảnh thuộc đúng nhóm, count rõ; target thiếu ảnh không được bù bằng target khác; query mơ hồ trả yêu cầu làm rõ |
+| 5. Graph và multi-hop | Trả kết quả qua đường quan hệ có nguồn | Place/entity aliases, quan hệ địa lý được version/provenance, traversal giới hạn và evidence references | Path khớp facts đã xác minh; hard constraint không bị bỏ khi graph lỗi; multi-hop thiếu facts được báo thiếu/no-answer |
+| 6. VLM reranking | Cải thiện thứ tự ảnh trong shortlist | API model adapter; CPU encoder local; VLM API shortlist 5–10 ảnh mỗi target, tổng không quá budget; quota, timeout, fallback, usage/cost metrics | Ablation so vector/keyword/graph với và không VLM; đo p95 end-to-end, độ đúng theo target, cost/query; chốt model và mức chi trước pilot |
+| 7. Sản phẩm MVP | Hoàn thiện hành trình, quyền và vận hành | UI/API tìm/lọc/nhóm/phân trang; import/admin; auth/media; attribution; backup/restore; telemetry và hướng dẫn dùng | FR có bằng chứng; data deletion không hồi sinh; guest/user/admin đúng quyền; reindex theo maintenance; lỗi dependency không giả thành rỗng |
+| 8. Pilot và scale | Đưa đến nhóm dùng thử rồi mở rộng theo tải | Pilot local/staging; báo cáo chất lượng, QPS, p95, tài nguyên, API cost; kế hoạch deploy | Chốt quality/SLO/RPO-RTO/retention; diễn tập restore; chỉ sau khi workload đạt mới thử mốc lớn hơn hướng tới 100k–1M |
 
-P0 dùng [biểu mẫu kiểm kê dữ liệu](data-inventory.md). P1 có thể dùng pipeline thử nghiệm nhỏ trước P3 đầy đủ; kết quả P1 phải khóa profile trước khi embedding toàn bộ kho. UI có thể dùng mock theo API contract trong lúc backend được triển khai.
+## Phụ thuộc và cách làm
 
-## 2. Các hạng mục triển khai
+- Phase 0 có thể làm ngay với fixtures nhỏ; phần nguồn thật ở phase 1 cần được kiểm tra trước khi tải ảnh.
+- Phase 1 và 2 bắt đầu bằng một nguồn crawl và một bộ seed giới hạn. Không mở crawler tổng quát hoặc crawl theo mọi URL người dùng nhập.
+- Phase 3 là baseline trước khi tinh chỉnh fusion. Phase 4 tách mục tiêu trước khi đo chất lượng multi-target. Phase 5 chỉ dùng relation có nguồn; VLM không sinh facts thay cho graph.
+- Phase 6 dùng quota ứng dụng và số đo request thực tế. Đề xuất ngân sách thử ban đầu 10–20 USD chưa được duyệt; không gọi API tính phí trước khi người dùng chốt hạn mức.
+- Giữ 9 bảng SQL. Crawl/import/retry dùng `jobs`; các mục tiêu query lưu trong JSON của `search_sessions`. Không thêm dịch vụ riêng khi chưa có số đo cho thấy cần.
+- Chi tiết crawler, schema metadata, CPU/RAM và nguồn đề xuất nằm trong [kế hoạch MVP địa danh](landmark-mvp-plan.md); yêu cầu sản phẩm ở [PRD](prd.md); câu hỏi còn mở ở [decisions.md](decisions.md).
 
-- DATA: inventory, sample có quyền, manifest revisions, metadata quality, label set.
-- CORE: users/roles/refresh registry, JWT login/refresh/logout, rotation/reuse và Origin/header policy, catalog/version schema, Qdrant client và payload schema/indexes, object storage adapter, audit.
-- INGEST: parser, jobs/leases, validate/decode, thumbnail, metadata snapshots, image batch encoder, transactional outbox, revisioned points, publish/retry/reconcile/purge.
-- GRAPH: entity/alias schema, provenance, source revisions, entity linker, traversal templates/budgets, graph projection/shared-fact registry, target deliveries, publish/reconcile/purge và backfill/cutover.
-- SEARCH: query validation, text encoder, vector/keyword/graph retrievers, hard relation membership, hydration/filters, weighted RRF, snapshots.
-- RERANK: VLM adapter, versioned model/processor/prompt/output schema, shortlist, rendition fetch, batching/admission, output validation, stable ordering và strict/fallback policy.
-- API/UI: hợp đồng lỗi, detail/media, import progress/retry, auth/download/account UI và các trạng thái giao diện.
-- EVAL/OPS: deterministic fixtures, integration tests, benchmark runner, metrics, backup/restore, reindex/cutover.
+## Definition of done cho MVP
 
-Các nhóm là backlog logic, không chỉ định thêm agent hoặc microservice. Khi bắt đầu implementation, chia thành thay đổi nhỏ có đầu ra review được và validation phù hợp.
-
-## 3. Ma trận truy vết
-
-| Yêu cầu | Thiết kế | Bằng chứng cần có |
-| --- | --- | --- |
-| FR01 | API search + query/retrieval | Unicode/blank/token limit và semantic benchmark |
-| FR02 | Qdrant filters + catalog check | Filters là lựa chọn người dùng, cùng phạm vi toàn kho giữa các user |
-| FR03 | Detail/media contract | Khách xem thumbnail nhưng detail 401; login xong xem được, URL expiry |
-| FR04 | Search session snapshot | Không lặp trang, cursor owner/tamper/expiry, dữ liệu thay đổi |
-| FR05 | Manifest/import/jobs | Replay, crash recovery, progress totals |
-| FR06 | Versions/tombstone/purge | Update race, delete during inference, stale worker |
-| FR07 | Loại khỏi MVP theo C07 | Không có feedback table/endpoint/UI; nhãn offline vẫn ở benchmark |
-| FR08 | Admin imports/items/retry | Phân quyền, retry all-or-nothing, safe error detail |
-| FR09 | Auth/RBAC, không image ACL | visitor bị chặn detail/download/admin; user bị chặn quản trị ảnh/tài khoản; admin quản trị cả hai; mọi người tìm cùng toàn kho |
-| FR10 | Login/me/access/refresh | JWT signature/claims, token types, expiry, single-use refresh/reuse/races, cookie flags/Origin/header, rate limit |
-| FR11 | Logout/logout-all | Refresh family và access token cũ bị từ chối, clear refresh cookie, idempotence và DB failure |
-| FR12 | Account/password/role/status | Auth_version, revoke refresh families, optimistic revision, last-admin race |
-| FR13 | Download | Khách 401; user mọi role tải mọi ảnh published, search không lộ URL gốc |
-| FR14 | Graph schema/linker/traversal, hard membership và graph publish | Entity ambiguity/alias, cycles/budgets, hard constraint không bị bỏ, stale/shared revisions và ablation quality |
-| FR15 | VLM shortlist/validator/snapshot | Output ngoài tập/thiếu/trùng ID, timeout/fallback, đúng image version, pagination không rerank lại và model benchmark |
-| NFR01 | Scale plan | Mốc 100k và 1M thật đại diện |
-| NFR02 | Search admission/deadline | p95 ở QPS/hardware/filter đã chốt |
-| NFR03 | Semantic evaluation | Holdout report, subgroup metrics, Q08 đã chốt |
-| NFR04 | ANN vs exact | Recall@100 cùng phạm vi, tie rules |
-| NFR05 | Leases và restore runbook | Crash scenarios, restore đạt RPO/RTO |
-| NFR06 | Generation/catch-up/cutover | Reindex rehearsal và rollback có dữ liệu cập nhật |
-| NFR07 | Secrets/logs/media/retention | Kiểm tra quyền storage/log redaction và cấu hình retention |
-
-Chi tiết ở [PRD](prd.md), [API](api-contract.md), [ingestion](ingestion-design.md), [evaluation](search-evaluation.md) và [operations](operations.md).
-
-## 4. Chiến lược kiểm thử khi triển khai
-
-Unit test cho logic có rủi ro: validation, cursor signing, role checks và public-search policy, state transitions, version checks và fusion. Integration test với DB quan hệ/Qdrant/graph/storage/VLM adapters để kiểm chứng filters, lease, visibility và outbox replay. Bắt buộc kiểm tra crash sau Qdrant upsert trước SQL publish, write trễ sau delete, duplicate event, payload hash sai và restore lệch mốc; không giả định transaction xuyên hệ. Mock external inference/network cho test thường xuyên; live benchmark chạy riêng trên dữ liệu được phép.
-
-End-to-end tối thiểu: nhập ảnh → đợi ready → tìm → lọc → phân trang → khách detail/download bị yêu cầu login → login → xem detail/download → logout → cập nhật → xóa → tìm lại không trả ảnh đó. Chạy thêm user gọi admin bị từ chối, hai user dùng cùng toàn kho, access/refresh hết hạn, reuse/response loss/role đổi, lỗi dependency và worker restart. Không kiểm tra chất lượng model bằng assertion trên vài ảnh rồi thay cho semantic benchmark.
-
-Toolchain và lệnh test chưa cấu hình. Khi thêm source đầu tiên phải có formatter/linter, framework test thích hợp, manifest/lockfile và các lệnh chính xác trong README; không ghi lệnh giả đang được hỗ trợ.
-
-## 5. Definition of done cho pilot
-
-- Phạm vi, QPS, semantic gate, quyền và retention cần thiết đã được chốt.
-- Mọi FR có bằng chứng; không còn lỗi làm lộ dữ liệu, hồi sinh ảnh xóa hoặc mất tiến độ đã commit.
-- Kết quả benchmark được tái lập, ghi cả hạn chế và cấu hình thất bại.
-- Restore và reindex/rollback đã diễn tập theo mục tiêu Q06.
-- Có hướng dẫn người dùng/quản trị, screenshots UI khi có giao diện, danh sách giới hạn và đầu mối vận hành.
-- Các chỉ tiêu chưa đạt được báo rõ và có quyết định phạm vi; không tự coi là hoàn thành chỉ vì hết thời gian.
-
-## 6. Mở rộng sau pilot
-
-Graph search và VLM rerank là đầu ra P1–P5 hiện tại, không hoãn sau pilot. Sau pilot ưu tiên dựa trên lỗi thực tế: cải thiện metadata/graph/fusion/reranker → OCR/caption hoặc VLM graph extraction khi có bằng chứng → tìm bằng ảnh → nguồn ngoài theo nhu cầu. Thứ tự hai mở rộng cuối có thể đổi theo sản phẩm; mỗi phần cần PRD và benchmark riêng, không tự đưa vào MVP hiện tại.
-
-Phụ thuộc bổ sung: P0 xác định nguồn thực thể/quan hệ và quyền dùng VLM; P1 thử graph và VLM trên mẫu trước backfill; P3 hoàn tất dual-projection consistency trước P4 online; P5 đo toàn pipeline, cả strict và fallback, graph revision đổi trong inference/pagination, restore graph/shared facts và contention GPU giữa import/rerank. Không nghiệm thu FR14/FR15 chỉ bằng việc đã có adapter hoặc sơ đồ.
+Người dùng gõ truy vấn tiếng Việt và nhận ảnh địa danh kèm nguồn; câu có nhiều địa danh trả nhóm riêng; multi-hop chỉ trả path có bằng chứng. Crawler có thể tiếp tục sau restart và giữ provenance. Vector/keyword/graph fusion và VLM rerank được đánh giá trên cùng bộ query; latency và chi phí được đo cùng chất lượng. Search, pagination, auth, xóa ảnh, lỗi dependency và restore được kiểm chứng trên sample. Mục tiêu cuối 100k–1M là scale gate riêng, không thay cho chất lượng đúng địa danh.

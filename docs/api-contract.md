@@ -4,7 +4,7 @@ Trạng thái: đặc tả đề xuất v0.1, chưa phải API đã triển khai
 
 Cập nhật 05/11/2026: search metadata đọc từ Qdrant payload; DB quan hệ kiểm tra lifecycle/published point và tài khoản/role theo chức năng. Thiết kế lưu trữ thay đổi không làm đổi public request/response dưới đây.
 
-Cập nhật 06/11/2026: pipeline gồm vector/keyword/graph → fusion → VLM rerank. Client vẫn gửi query/filters; không gửi raw graph query, tên model hoặc credentials. Server chọn profile đã version. Chi tiết ở [graph và reranking](graph-reranking-design.md).
+Cập nhật 06/11/2026: pipeline gồm vector/keyword/graph → fusion → VLM rerank. Client vẫn gửi query/filters; không gửi raw graph query, tên model hoặc credentials. Server chọn active row trong search_configs đã version; SQL hiện hành gồm 9 bảng theo C13. Chi tiết ở [graph và reranking](graph-reranking-design.md).
 
 ## 1. Quy ước chung
 
@@ -38,7 +38,7 @@ Lỗi có cấu trúc:
 | 410 | SEARCH_EXPIRED | Tìm lại từ trang đầu |
 | 422 | INVALID_QUERY, INVALID_FILTER, INVALID_MANIFEST, TOKEN_LIMIT_EXCEEDED | Hiển thị lỗi theo field |
 | 429 | RATE_LIMITED | Chờ theo Retry-After; retry có giới hạn |
-| 503 | SEARCH_UNAVAILABLE, DEPENDENCY_UNAVAILABLE | Retry có giới hạn, giữ query |
+| 503 | SEARCH_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, MAINTENANCE_MODE | Retry có giới hạn, giữ query; bảo trì có Retry-After, không lặp mù thao tác ghi |
 | 504 | SEARCH_TIMEOUT | Thông báo timeout, cho tìm lại |
 
 Lỗi không đưa stack trace, đường dẫn nội bộ, token, credentials hoặc signed URL vào details. Unexpected error trả 500 INTERNAL_ERROR với request_id.
@@ -101,9 +101,9 @@ Strict là mặc định. Graph/VLM dependency lỗi trả 503 SEARCH_UNAVAILABL
 
 Request tiếp theo chỉ chứa `cursor` và tùy chọn `limit`; không được đồng thời chứa query hoặc filters. Cursor được ký hoặc là token ngẫu nhiên opaque, ràng buộc search_id, hash owner_key từ X-Search-Owner và vị trí; TTL đề xuất 15 phút từ lúc tạo phiên. Client coi cursor là opaque, không tự giải mã/sửa.
 
-Server lưu tối đa 200 ID/version/point_id đã xếp hạng mỗi phiên làm cửa sổ kết quả ban đầu. Với VLM, chỉ lưu shortlist đã rerank: ví dụ rerank_window=50 thì snapshot tối đa 50 dù trần API là 200; không nối tail chưa được chấm. Window cấu hình ít nhất bằng limit request; ít ứng viên hợp lệ hơn thì trả số có được. Không gọi lại VLM hoặc chạy lại retrieval khi đọc cursor. Snapshot giữ degraded/degradation_reason từ lúc tạo cho mọi trang. Mỗi trang kiểm tra lại trạng thái/published point, bỏ item bị xóa, chưa công bố hoặc đổi version, tiến tiếp trong snapshot để lấp trang. Không đưa ảnh mới vào snapshot. next_cursor=null khi hết cửa sổ, kể cả kho vẫn còn ảnh; UI chỉ nói đã hết kết quả của lượt tìm này.
+Server lưu items JSON trong search_sessions, tối đa 200 ID/version/point_id đã xếp hạng mỗi phiên làm cửa sổ kết quả ban đầu. Với VLM, chỉ lưu shortlist đã rerank: ví dụ rerank_window=50 thì snapshot tối đa 50 dù trần API là 200; không nối tail chưa được chấm. Với chế độ duyệt, window cấu hình ít nhất bằng limit request; với count hữu hạn theo mục 13, window đủ số ảnh cần trả và có thể nhỏ hơn limit trang; ít ứng viên hợp lệ hơn thì trả số có được. Không gọi lại VLM hoặc chạy lại retrieval khi đọc cursor. Snapshot giữ degraded/degradation_reason từ lúc tạo cho mọi trang. Mỗi trang kiểm tra lại trạng thái/published point, bỏ item bị xóa, chưa công bố hoặc đổi version, tiến tiếp trong snapshot để lấp trang. Không đưa ảnh mới vào snapshot. next_cursor=null khi hết cửa sổ, kể cả kho vẫn còn ảnh; UI chỉ nói đã hết kết quả của lượt tìm này.
 
-Cùng cursor và limit trả cùng vị trí logic, nhưng response có thể ít item hơn khi dữ liệu thay đổi. Thumbnail URL được cấp mới theo request. Trang nối tiếp không lặp ID trong một chuỗi cursor. Cursor khác owner_key hoặc bị sửa trả 400 INVALID_CURSOR; snapshot hết hạn trả 410. Nếu query có hard graph constraint và published graph_revision đổi, trả 410 SEARCH_EXPIRED và yêu cầu tìm lại; không tiếp tục trả ảnh dựa trên quan hệ cũ. Query chỉ dùng graph để boost giữ thứ tự snapshot, vẫn kiểm tra catalog/pointers. TTL và cửa sổ được benchmark để cân bằng chi phí lưu snapshot. X-Search-Owner là giá trị ngẫu nhiên tối thiểu 128 bit client giữ trong memory và gửi trên request tạo/đọc snapshot; server lưu hash, không dùng làm filter ảnh. Thiếu/không đúng định dạng key trả 400 INVALID_SEARCH_OWNER; key không khớp cursor trả INVALID_CURSOR. Không có cookie/session đăng nhập cho search; khi login/logout bắt đầu snapshot mới, refresh access token không đổi owner key.
+Cùng cursor và limit trả cùng vị trí logic, nhưng response có thể ít item hơn khi dữ liệu thay đổi. Thumbnail URL được cấp mới theo request. Trang nối tiếp không lặp ID trong một chuỗi cursor. Cursor khác owner_key hoặc bị sửa trả 400 INVALID_CURSOR; snapshot hết hạn hoặc config_id không còn active trả 410 SEARCH_EXPIRED. Nếu query có hard graph constraint và published graph_revision đổi, trả 410 SEARCH_EXPIRED và yêu cầu tìm lại; không tiếp tục trả ảnh dựa trên quan hệ cũ. Query chỉ dùng graph để boost giữ thứ tự snapshot, vẫn kiểm tra catalog/pointers. TTL và cửa sổ được benchmark để cân bằng chi phí lưu snapshot. X-Search-Owner là giá trị ngẫu nhiên tối thiểu 128 bit client giữ trong memory và gửi trên request tạo/đọc snapshot; server lưu hash, không dùng làm filter ảnh. Thiếu/không đúng định dạng key trả 400 INVALID_SEARCH_OWNER; key không khớp cursor trả INVALID_CURSOR. Không có cookie/session đăng nhập cho search; khi login/logout bắt đầu snapshot mới, refresh access token không đổi owner key.
 
 ## 4. GET /v1/images/{image_id}
 
@@ -121,17 +121,19 @@ Cần role admin toàn hệ thống; bắt buộc Idempotency-Key. Body gồm co
 
 Manifest JSONL, mỗi dòng gồm source_item_key ổn định, input_revision integer tăng đơn điệu theo item, object_key thuộc nguồn được phép và metadata tùy chọn. Chi tiết validation ở [ingestion-design.md](ingestion-design.md). Revision nhỏ hơn bản đã nhận là superseded; cùng revision khác nội dung là conflict.
 
-202 trả request_id, import_id, status=queued và status_url. Tạo import không đồng nghĩa ảnh đã searchable. Lỗi cấu trúc request trả đồng bộ; lỗi từng dòng manifest sau khi chạy parser được ghi trong kết quả import. Giới hạn manifest đề xuất 10.000 dòng và 10 MiB mỗi import; một triệu ảnh chia nhiều import có manifest/checkpoint riêng.
+202 trả request_id, import_id, status=queued và status_url. Import root là row jobs type=import; mỗi item là row jobs type=import_item. API giữ nguyên import_id/item_id; không có bảng import/item riêng. Tạo import không đồng nghĩa ảnh đã searchable. Lỗi cấu trúc request trả đồng bộ; lỗi từng dòng manifest sau khi chạy parser được ghi trong result của import_item jobs, kể cả khi chưa tạo image_id. Giới hạn manifest đề xuất 10.000 dòng và 10 MiB mỗi import; một triệu ảnh chia nhiều import có manifest/checkpoint riêng.
 
 ## 7. GET /v1/admin/imports/{import_id}
 
 200 gồm request_id, import_id, status, total_items nullable khi đang parse, counts theo từng trạng thái, created_at, updated_at. Status: queued/parsing/running/completed/completed_with_errors/failed.
 
+Counts lấy từ child jobs type import_item, không đếm processing/sync jobs thành ảnh riêng.
+
 GET `/v1/admin/imports/{import_id}/items?status=failed&limit=100&cursor=...` trả lỗi từng item theo ID tăng dần, cursor opaque; limit 1–100. Cần admin; user thường trả 403, chưa login trả 401. Error detail được làm sạch, không chứa dữ liệu bí mật.
 
 ## 8. POST /v1/admin/imports/{import_id}/retry
 
-Body item_ids: 1–100 UUID không trùng, thuộc import và đang failed do nguyên nhân có thể thử lại sau khi quản trị sửa điều kiện. Tất cả item được kiểm tra trong một transaction; item không hợp lệ trả 409 và không enqueue một phần. Retry không hồi sinh ảnh tombstone hoặc version đã superseded. Thành công 202 trả queued_item_count và request_id; gọi lại khi job pending/running trả 409 JOB_NOT_RETRYABLE.
+Body item_ids: 1–100 UUID không trùng, thuộc import và đang failed do nguyên nhân có thể thử lại sau khi quản trị sửa điều kiện. Tất cả item được kiểm tra trong một transaction; item không hợp lệ trả 409 và không reset/enqueue một phần. Chỉ retry bước lỗi có thể phục hồi, giữ target đã ready và projection identity/hash; cập nhật item/root progress cùng transaction. Retry không hồi sinh ảnh tombstone hoặc version đã superseded. Thành công 202 trả queued_item_count và request_id; gọi lại khi job pending/running trả 409 JOB_NOT_RETRYABLE.
 
 Sửa ảnh hoặc metadata thực hiện qua import revision mới; không thêm endpoint update riêng khi chưa có nhu cầu chỉnh từng ảnh trên UI.
 
@@ -143,7 +145,7 @@ Tombstone có hiệu lực với response mới sau commit; response hoặc URL 
 
 ## 10. GET /v1/admin/images/{image_id}
 
-Cần admin. Trả trạng thái cả ảnh active và deleted: image_id, collection_id, lifecycle, current_version, desired_version, metadata_revision, processing_status, vector_projection_status, graph_projection_status, purge_status, updated_at, request_id; header ETag chứa metadata_revision dạng quoted string. Không đủ role trả 403; chưa login trả 401.
+Cần admin. Trạng thái projection được suy từ image_versions.index_state đúng active config. Trả trạng thái cả ảnh active và deleted: image_id, collection_id, lifecycle, current_version, desired_version, metadata_revision, processing_status, vector_projection_status, graph_projection_status, purge_status, updated_at, request_id; header ETag chứa metadata_revision dạng quoted string. Không đủ role trả 403; chưa login trả 401.
 
 ## 11. Tài khoản và xác thực
 
@@ -151,7 +153,7 @@ Visitor là khách không đăng nhập, không tạo users record hoặc nhận
 
 Theo [auth-design.md](auth-design.md), response tài khoản chỉ chứa id/email/display_name/role/status, revision và request_id; không trả hash hoặc refresh secret.
 
-Mọi API protected chỉ nhận access JWT qua Authorization: Bearer; không dùng refresh cookie để xác thực tài nguyên. Các auth endpoints dùng cookie (login/refresh/logout) yêu cầu Origin allowlist, JSON và X-Auth-Request: 1 theo auth-design. Không có GET /auth/csrf hoặc cookie session.
+Mọi API protected chỉ nhận access JWT qua Authorization: Bearer; không dùng refresh cookie để xác thực tài nguyên. Refresh family không có bảng riêng: token root nằm trong refresh_tokens; JWT family_id trỏ root để kiểm tra revoke/deadline. Giữ nguyên hành vi rotation/reuse và access revocation. Các auth endpoints dùng cookie (login/refresh/logout) yêu cầu Origin allowlist, JSON và X-Auth-Request: 1 theo auth-design. Không có GET /auth/csrf hoặc cookie session.
 
 | Endpoint | Hành vi | Quyền |
 | --- | --- | --- |
@@ -193,3 +195,38 @@ Import/retry/delete và mọi API quản trị cần bearer access + role admin;
 `GET /health/live`: kiểm tra process còn hoạt động, không chạm dependency; `GET /health/ready`: 200 khi instance phục vụ được, 503 nếu encoder, Qdrant collection/profile, DB quan hệ, graph generation/revision hoặc VLM bắt buộc theo active profile chưa sẵn sàng. Readiness kiểm tra model/config đã nạp và dependency bằng probe nhẹ, không chạy full VLM rerank trên mỗi health request. Chỉ coi fallback là ready nếu profile cho phép và vẫn kiểm chứng được hard constraints. Health được giới hạn ở hạ tầng vận hành, không công khai topology hay credential.
 
 Thêm field response tùy chọn được coi là tương thích; đổi nghĩa, xóa field hoặc làm request cũ mất hợp lệ cần version mới. Khi bắt đầu code, chuyển hợp đồng này thành OpenAPI và kiểm tra ví dụ bằng schema; hiện chưa có endpoint nào chạy.
+
+C13 maintenance: tạo import/retry ghi, delete, metadata/fact updates và worker claims ngoài tập drain bị chặn khi writes_blocked; jobs trong tập drain bền vững được tiếp tục để hoàn tất barrier; API trả 503 MAINTENANCE_MODE có Retry-After, không nhận thao tác rồi âm thầm bỏ. Search có thể chạy trên config cũ trong build; khi search_blocked/cutover trả cùng lỗi bảo trì. Auth/account/detail/download tiếp tục nếu dependencies/version còn hợp lệ. Health/readiness phản ánh instance có phục vụ được search theo gate; liveness không fail chỉ vì bảo trì. Source_id/manifest_key được kiểm tra theo source config ref/hash đã đăng ký phía server, không yêu cầu bảng source.
+
+## 13. Truy vấn địa danh, nhiều mục tiêu và multi-hop
+
+C14–C18 bổ sung vào POST /v1/search các trường tùy chọn `mode` (auto mặc định, single, multi_target, multi_hop) và `results_per_target` (integer 1–5). Không gửi các trường mới vẫn hỗ trợ search duyệt thông thường; planner nhận diện nhiều targets khi có danh sách yêu cầu riêng như “ảnh Hạ Long, ảnh Cát Bà”. `limit` tiếp tục là kích thước trang 1–50, không quyết định số target hoặc số hops.
+
+Ví dụ request multi-target:
+
+```json
+{
+  "query": "Tìm ảnh Hạ Long, ảnh Cát Bà",
+  "mode": "multi_target",
+  "results_per_target": 1,
+  "limit": 20
+}
+```
+
+Planner đề xuất tối đa 5 targets, mỗi target resolve/place alias riêng. `results_per_target` mặc định 1 khi multi_target, hoặc suy từ yêu cầu số ảnh rõ ràng trong câu (ví dụ “cho tôi 1 ảnh Hạ Long”); count tường minh trong JSON và câu mâu thuẫn trả 422 INVALID_QUERY. Single/multi_hop không nêu count vẫn có thể duyệt theo limit như contract ban đầu. Multi-hop ở từng target là subplan graph, không bị mất khi query mode chính là multi_target. Các giới hạn này là thiết kế đề xuất cần kiểm thử bằng query thật.
+
+Thêm fields response tùy chọn `query_mode`, `groups`, `partial`. Top-level items vẫn là list ảnh đầy đủ với schema cũ, dedup theo image_id. Groups có target_id, label, resolved entity IDs, image_ids tham chiếu top-level items, status=ok/no_match/insufficient và evidence gồm entity IDs/predicates/source URLs hoặc source revision công khai phù hợp. Không trả object keys/secret hoặc chain-of-thought. Nếu một ảnh thuộc nhiều target đã xác minh, nhóm tham chiếu cùng ID; không nhân đôi top-level item. Client dùng groups để hiển thị đúng target thay vì coi thứ tự flat là quota từng nơi.
+
+Mỗi nhóm được lấy/rerank riêng trong budget chung request, tối đa 50 ảnh VLM/request theo cấu hình thử; không lấy top-2 của một embedding cả câu. Với count hữu hạn, snapshot chỉ giữ số ảnh đã chọn cho mỗi target, không thêm tail vượt count; nếu tất cả kết quả vừa trang đầu thì next_cursor=null. Khi nhiều trang, nhóm chỉ liệt kê IDs thuộc trang hiện tại, còn statuses/counts cuối lấy từ query_plan snapshot; cursor giữ group membership và vị trí, không rerank lại.
+
+partial=true nếu có nhóm no_match/insufficient trong khi nhóm khác có ảnh; không bù bằng ảnh của nơi khác. Nếu mọi nhóm không có ảnh hợp lệ thì items=[], groups có trạng thái rỗng, next_cursor=null, HTTP 200 và partial=false. Thiếu ảnh hợp lệ không đồng nghĩa degraded; lỗi dependency vẫn theo strict/fallback trước đó, không chuyển thành nhóm no_match. Entity mơ hồ không giải được trả 422 INVALID_QUERY có target_id trong details; chưa chọn entity thì không gán no_match tùy tiện.
+
+Search_sessions lưu query_plan JSON (mode, target IDs/labels/entities, counts/statuses/evidence refs) và items JSON với target_ids, giữ config_id/graph_revision và expires_at. Không tạo bảng query/target/result riêng. Query nhạy cảm và evidence retention vẫn theo Q09. Multi-hop evidence/path phải khớp graph revision đã chụp, được final-check sau VLM; không tự thêm facts từ trí nhớ model.
+
+## 14. Crawl nguồn web — admin
+
+Đề xuất POST /v1/admin/crawls cần admin và Idempotency-Key, body source_id, seed_entity_ids/category IDs theo source config, max_images và collection_id. Source/prefix/download host, quota/rate và accept rules lấy từ config server; không nhận URL bất kỳ hoặc graph query. Đề xuất max_images 1–1.500 cho đợt sample, source adapter có thể giới hạn thấp hơn. Request hợp lệ trả 202 request_id/crawl_id/status_url; crawl_id là jobs.id type crawl.
+
+GET /v1/admin/crawls/{crawl_id} trả status, checkpoint progress, discovered/accepted/downloaded/rejected/failed counts và import_id nullable khi manifest đã được chuyển vào import pipeline. GET /v1/admin/crawls/{crawl_id}/items với cursor/limit 1–100 đọc jobs type crawl_item và lỗi đã làm sạch. Counts crawl không phải số ảnh searchable; trạng thái publish xem qua import_id. Không thêm public crawl/search-provider endpoint hoặc bảng SQL.
+
+Crawl job và các jobs fetch_media/crawl_item chạy có dedupe/checkpoint; nguồn/tải lỗi giữ trạng thái riêng, không làm mất metadata/attribution. Maintenance writes_blocked chặn crawl mới và claim ngoài tập drain như import; không tải không giới hạn rồi bỏ checkpoint. Retry request tạo crawl cùng idempotency key/body trả cùng root; khác body trả 409. Retry tự động hữu hạn theo job policy; chưa thêm endpoint admin retry crawl riêng khi chưa đặc tả workflow.

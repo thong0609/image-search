@@ -2,6 +2,8 @@
 
 Trạng thái: thiết kế cập nhật ngày 06/11/2026. Người dùng đã chọn Qdrant lưu vector và metadata tìm kiếm, tách khỏi database quan hệ. Phạm vi theo [PRD](prd.md), quyết định theo [ADR](decisions.md).
 
+Cập nhật C13: [schema SQL hiện hành gồm 9 bảng](data-model.md); job types thay các bảng import/outbox riêng, index_state thay projection registries, active row trong search_configs thay active pointer riêng.
+
 ## 1. Thành phần và ranh giới
 
 ```mermaid
@@ -32,7 +34,7 @@ flowchart TD
     SYNC --> GR
 ```
 
-Backend theo module, cùng codebase; process API và worker tách biệt. Encoder có interface versioned và có thể chạy trong process trước, tách inference service khi tài nguyên yêu cầu. Qdrant lưu vector cùng payload metadata dùng cho tìm/lọc/hiển thị ảnh. DB quan hệ quản lý danh tính ảnh, lifecycle/version, users/roles/refresh token registry, jobs, outbox và search sessions; PostgreSQL là ứng viên cho vai trò này, chưa phải lựa chọn đã được người dùng chốt. Graph storage adapter giữ entity/aliases, relations và image projections có provenance/version; chưa chọn engine. Object storage chứa ảnh, thumbnail, graph artifacts và snapshot metadata bất biến để phục hồi. Chi tiết phân chia dữ liệu và đồng bộ ở [thiết kế Qdrant](qdrant-design.md).
+Backend theo module, cùng codebase; process API và worker tách biệt. Encoder có interface versioned và có thể chạy trong process trước, tách inference service khi tài nguyên yêu cầu. Qdrant lưu vector cùng payload metadata dùng cho tìm/lọc/hiển thị ảnh. DB quan hệ quản lý danh tính ảnh, lifecycle/version, users/roles/refresh token registry, jobs, outbox và search sessions; PostgreSQL đã được người dùng chọn cho vai trò này. Graph storage adapter giữ entity/aliases, relations và image projections có provenance/version; chưa chọn engine. Object storage chứa ảnh, thumbnail, graph artifacts và snapshot metadata bất biến để phục hồi. Chi tiết phân chia dữ liệu và đồng bộ ở [thiết kế Qdrant](qdrant-design.md).
 
 | Module | Trách nhiệm | Không chịu trách nhiệm |
 | --- | --- | --- |
@@ -42,7 +44,7 @@ Backend theo module, cùng codebase; process API và worker tách biệt. Encode
 | Ingestion | Tiến độ, job lease, xử lý theo batch | Tiếp nhận truy vấn người dùng |
 | Graph | Entity linking, traversal, trả image_id/version và bằng chứng quan hệ; graph projection đồng bộ từ nguồn chuẩn | Tự suy đoán quan hệ nghiệp vụ hoặc thay catalog |
 | Reranking | VLM chấm query–ảnh trên shortlist, validate output và lưu config | Quét toàn kho hoặc tạo image_id mới |
-| Model registry | Profile model/processor/index tương thích | Tự đổi model mà không đánh giá |
+| Search configuration | search_configs giữ model/processor/index tương thích và runtime gates | Tự đổi model mà không đánh giá |
 | Evaluation offline | Gán nhãn và so sánh cấu hình benchmark | Thu feedback người dùng trong MVP |
 
 ## 2. Luồng tìm kiếm
@@ -53,7 +55,7 @@ Backend theo module, cùng codebase; process API và worker tách biệt. Encode
 4. Chạy vector và keyword retrieval trên Qdrant; entity linker lập graph query có kiểm soát, graph retriever trả image_id/version. Query không có ý định quan hệ có thể skip graph theo quy tắc profile; điều kiện quan hệ bắt buộc dùng graph để kiểm chứng membership, không chỉ boost điểm.
 5. Fuse theo rank nếu có nhiều nhánh, giảm trùng; batch-check lifecycle, content_version và point_id đã công bố từ catalog. Loại point chưa công bố hoặc đã cũ, kể cả payload còn báo active.
 6. Hydrate graph candidates bằng published point Qdrant, áp dụng mọi filters và điều kiện graph bắt buộc. Chọn shortlist hữu hạn rồi VLM chấm query với ảnh đúng version; validate output, giữ tie-break ổn định. Final-check lifecycle/pointer và graph revision sau inference; lưu snapshot đã rerank có thời hạn rồi trả trang đầu. Metadata lấy từ point đã kiểm chứng. Chi tiết shortlist/fallback ở [thiết kế graph và rerank](graph-reranking-design.md).
-7. Mỗi trang tiếp theo kiểm tra lại trạng thái và version; bỏ item không còn hợp lệ và bổ sung từ phần còn lại của snapshot. Không rerank lại. Với hard graph constraint, graph revision đổi làm snapshot hết hiệu lực và trả SEARCH_EXPIRED.
+7. Snapshot lưu items JSON trong search_sessions. Mỗi trang tiếp theo kiểm tra lại trạng thái và version; bỏ item không còn hợp lệ và bổ sung từ phần còn lại của snapshot. Không rerank lại. Config active đổi, hoặc với hard graph constraint graph revision đổi, làm snapshot hết hiệu lực và trả SEARCH_EXPIRED.
 
 Không giữ transaction xuyên nhiều request HTTP. Snapshot hữu hạn, không bảo đảm kết quả mới nhập xuất hiện trong phiên đang mở. Chi tiết phân trang ở [API contract](api-contract.md).
 
@@ -61,14 +63,14 @@ Search response chỉ có thumbnail. GET detail và POST download xác thực ac
 
 ## 3. Luồng nhập ảnh
 
-Admin tạo import từ manifest trong nguồn được phép → tạo import_items/jobs → worker claim → lưu ảnh, thumbnail và metadata snapshot → encode ảnh và dựng graph artifact từ thực thể/quan hệ có nguồn → ghi intent/outbox bền vững → upsert Qdrant và graph projection → xác nhận cả hai đã áp dụng/đọc được theo consistency đã chọn → transaction DB quan hệ công bố point_id và current_version có điều kiện → báo tiến độ. Nếu crash giữa các store, replay delivery riêng từng target từ outbox; chỉ publish khi cả Qdrant và graph sẵn sàng. State machine ở [ingestion-design.md](ingestion-design.md).
+Admin tạo import từ manifest trong nguồn được phép → tạo jobs type import/import_item và các processing jobs → worker claim → lưu ảnh, thumbnail và metadata snapshot → encode ảnh và dựng graph artifact từ thực thể/quan hệ có nguồn → ghi intent/outbox bền vững → upsert Qdrant và graph projection → xác nhận cả hai đã áp dụng/đọc được theo consistency đã chọn → transaction DB quan hệ công bố point_id và current_version có điều kiện → báo tiến độ. Nếu crash giữa các store, replay delivery riêng từng target từ outbox; chỉ publish khi cả Qdrant và graph sẵn sàng. State machine ở [ingestion-design.md](ingestion-design.md).
 
 ## 4. Nhất quán và các bất biến
 
 - Chỉ tìm trên image active và version có vector ready trong generation đang đọc.
 - Cập nhật nội dung tạo version mới; version đang phục vụ chỉ đổi sau khi dữ liệu mới sẵn sàng. Trong lúc xử lý, có thể tiếp tục trả version cũ còn hợp lệ.
 - Tombstone được kiểm tra theo trạng thái hiện tại, không chờ Qdrant sync. Search/thumbnail public; detail/download yêu cầu access token hợp lệ và trạng thái thu hồi; admin thao tác cần role. Không có image ACL hay collection grants.
-- Worker chỉ công bố nếu desired_version, generation và lease token còn đúng; worker cũ không được ghi đè công bố mới.
+- Worker chỉ công bố images.current_version nếu hai target trong image_versions.index_state ready và desired_version, active config/generation, lease token còn đúng; worker cũ không được ghi đè công bố mới.
 - PostgreSQL transaction không bao trùm ghi object storage. Ghi object bất biến trước, commit tham chiếu sau; reconciliation dọn object mồ côi theo thời gian đệm.
 - Graph projection là chỉ mục dẫn xuất riêng, không phải đồ thị HNSW của ANN. Graph và Qdrant cùng gắn image_id/content_version; công bố version mới khi cả hai projection bắt buộc sẵn sàng. Xem [graph consistency](graph-reranking-design.md).
 - DB quan hệ, graph store và Qdrant không dùng chung transaction. Outbox, idempotent upsert, versioned point và reconciliation là thành phần bắt buộc. Lease/fencing trong DB quan hệ chỉ bảo vệ công bố pointer, không tự hủy write Qdrant đã gửi.
@@ -77,7 +79,7 @@ Admin tạo import từ manifest trong nguồn được phép → tạo import_i
 
 Mỗi generation dùng một không gian vector với dimension, model và metric cố định. Dữ liệu mới nhận diện theo image_id/content_version; không trộn vector hai model. HNSW là ứng viên online; đo recall và độ trễ dưới filters. Exact search là chuẩn so sánh ANN trong benchmark.
 
-Mỗi generation ánh xạ một Qdrant collection vật lý, tên lấy từ registry nội bộ, không nhận identifier từ client. Business collection dùng để phân loại được lưu ở payload collection_id; không tạo Qdrant collection cho từng thư mục nghiệp vụ. API chụp tên collection vật lý cùng profile để tránh đổi index và encoder lệch nhau. Việc giữ hai generation khi đổi model cần thêm dung lượng và catch-up thay đổi.
+Mỗi generation ánh xạ một Qdrant collection vật lý, tên lấy từ search_configs nội bộ, không nhận identifier từ client. Business collection dùng để phân loại được lưu ở payload collection_id; không tạo Qdrant collection cho từng thư mục nghiệp vụ. API chụp tên collection vật lý cùng profile để tránh đổi index và encoder lệch nhau. Thông tin generation/model nằm trong search_configs, không có bảng registry riêng. Reindex MVP chặn và drain các ghi catalog/facts qua maintenance window rồi build trên dữ liệu đứng yên; chưa có dual-write/catch-up online. Cutover đổi active row nguyên tử, tạm dừng/drain search và vô hiệu hóa snapshots cũ.
 
 ## 6. Lỗi, timeout và quá tải
 
@@ -99,3 +101,11 @@ Chỉ thêm cache khi có lợi ích đo được; key bao gồm query, filters,
 - Nguồn ngoài: connector nhập được cấp phép hoặc retriever API riêng; source namespaced và provenance có sẵn trong catalog.
 - Nhiều nguồn: fusion theo thứ hạng, timeout từng nguồn và trạng thái suy giảm rõ; không so trực tiếp cosine nội bộ với score nhà cung cấp.
 - OCR/caption: artifact có provenance, version riêng; không làm thay đổi ảnh gốc hay thay thế image embedding mặc định.
+
+Bảo trì C13: API/worker đọc maintenance state bền trong search_configs trước nhận/claim ghi catalog/facts/import/delete; chỉ cho phép tập jobs drain đã ghi bền tiếp tục. Chặn thao tác mới và drain mọi writer đang chạy trước rebuild; search trên bản cũ chỉ tiếp tục nếu tài nguyên đủ, cutover có khoảng dừng search. Trả 503 MAINTENANCE_MODE với Retry-After cho thao tác bị chặn; auth/account vẫn phục vụ nếu dependency sẵn sàng. Rebuild/rollback theo [operations.md](operations.md).
+
+## 9. Local địa danh và acquisition
+
+FastAPI và PostgreSQL đã chốt C16. Chạy local trước trên Intel Raptor Lake-P, RAM hệ thống 16 GB dùng chung với GPU; đề xuất encoder CPU, VLM remote adapter và API/worker cùng codebase. Không chọn model local dựa trên giả định có 16 GB VRAM. Storage/graph adapter cho sample có thể dùng filesystem/immutable JSON ngoài Git, không thêm SQL tables; deployment/cloud/frontend chưa chốt.
+
+Crawl là acquisition offline: configured source/seed → jobs crawl/fetch → manifest/object artifacts → import/encode/graph → publish. Search chỉ đọc kho đã publish, không gọi crawler trên đường truy vấn. Metadata địa danh/provenance và facts theo [MVP địa danh](landmark-mvp-plan.md). Single/multi-target/multi-hop có query_plan versioned; nhiều target tạo nhiều retrieval subplans, merge kết quả theo nhóm và giữ budget chung, không fusion lẫn target thành một quota duy nhất. Search_sessions.query_plan/items JSON giữ grouping/evidence refs cho pagination.

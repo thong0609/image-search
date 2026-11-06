@@ -1,15 +1,17 @@
 # Thiết kế Qdrant và ranh giới với DB quan hệ
 
-Cập nhật: 05/11/2026. Đã xác nhận: dùng Qdrant lưu vector và metadata tìm kiếm, tách khỏi database quan hệ; không dùng pgvector. PostgreSQL vẫn chỉ là đề xuất cho DB quan hệ. Chi tiết schema, consistency và topology dưới đây là thiết kế cần kiểm chứng khi triển khai.
+Cập nhật: 05/11/2026. Đã xác nhận: dùng Qdrant lưu vector và metadata tìm kiếm, tách khỏi database quan hệ; không dùng pgvector. PostgreSQL đã được chọn cho DB quan hệ. Chi tiết schema, consistency và topology dưới đây là thiết kế cần kiểm chứng khi triển khai.
 
 Thiết kế truy cập cập nhật: không ACL theo ảnh/collection, không feedback; tài khoản/role theo [auth-design.md](auth-design.md).
+
+Cập nhật C13: SQL còn 9 bảng; references/hashes/trạng thái projection nằm trong image_versions.index_state, con trỏ công bố là images.current_version, active config lấy từ search_configs và jobs đóng vai trò outbox. Không có projection/generation/published-pointer tables riêng.
 
 ## 1. Phân chia trách nhiệm dữ liệu
 
 | Hệ lưu trữ | Dữ liệu | Vai trò |
 | --- | --- | --- |
 | Qdrant | Image vector; payload title, tags, kích thước, hướng ảnh, source, license, version và các trường tìm/lọc | Nguồn phục vụ vector search và search metadata |
-| DB quan hệ | Identity ảnh, object references, phiên bản, tombstone, users/roles/refresh token registry, imports/jobs, outbox, published point pointers, search sessions, audit | Nguồn chuẩn cho vòng đời, xác thực/phân quyền chức năng và quy trình nghiệp vụ |
+| DB quan hệ | Identity ảnh, object references, phiên bản, tombstone, users/roles/refresh token registry, typed jobs kiêm outbox, image_versions.index_state/current_version, search_configs, search snapshots, audit | Nguồn chuẩn cho vòng đời, xác thực/phân quyền chức năng và quy trình nghiệp vụ |
 | Graph storage adapter | Entity/aliases, relations có provenance, image_id/content_version/projection_revision và shared fact revisions | Nhánh graph search; engine chưa chốt, không thay Qdrant hoặc catalog |
 | Object storage | Ảnh gốc, thumbnail, metadata snapshot bất biến, manifest và embedding artifact khi cần replay | Dữ liệu media và đầu vào tái dựng projection |
 
@@ -21,7 +23,7 @@ Khi tìm kiếm, API lấy vector neighbors và payload từ Qdrant; DB quan h�
 
 ## 2. Collections và point identity
 
-Một generation ứng với một collection vật lý, ví dụ `images_g001`. Vector name đề xuất `image`; dimension và distance lấy từ retrieval_profile, không cố định 768 cho mọi model. Một collection chứa nhiều business collections, tách bằng payload `collection_id`. Không tạo một collection Qdrant cho từng người dùng hoặc thư mục.
+Một generation ứng với một collection vật lý, ví dụ `images_g001`. Vector name đề xuất `image`; dimension và distance lấy từ search config, không cố định 768 cho mọi model. Một collection chứa nhiều business collections, tách bằng payload `collection_id`. Không tạo một collection Qdrant cho từng người dùng hoặc thư mục.
 
 Point ID là UUID xác định từ generation_id + image_id + content_version + projection_revision. Cùng projection luôn có cùng vector/payload hash; retry upsert cùng ID phải gửi cùng nội dung. Nếu nội dung/payload cần sửa thì tạo revision/point mới, không ghi đè point đã công bố. ID khác giữa hai revision để write trễ của worker cũ không thể đè metadata mới.
 
@@ -54,6 +56,8 @@ Ví dụ payload, không phải toàn bộ request upsert; vector không xuất 
 }
 ```
 
+C14–C18 bổ sung payload source_type=web_import cho ảnh web đã nhập kho (private vẫn hợp lệ), description/source_description/description_vi nullable, place_ids/aliases và provenance/attribution theo [MVP địa danh](landmark-mvp-plan.md). Chỉ index description/title/tags thực sự dùng lexical; relations/facts vẫn ở graph artifacts, không thêm SQL table.
+
 Không lưu secret, signed URL, mật khẩu/access hoặc refresh token hoặc raw user query trong payload. Object keys do catalog quản lý; API xác thực khi cấp preview/download URL. Thumbnail là public ở mức sản phẩm. Caption/OCR chỉ thêm khi có pipeline, provenance và phiên bản rõ ràng. Lifecycle nếu mirror vào payload chỉ là tín hiệu tối ưu, không phải nguồn quyết định xóa hoặc trạng thái tài khoản.
 
 Qdrant hỗ trợ payload và indexes theo trường; exact match chuỗi và tìm nội dung văn bản có cách đánh index khác nhau. [Payload](https://qdrant.tech/documentation/concepts/payload/), [payload indexing](https://qdrant.tech/documentation/manage-data/indexing/).
@@ -76,10 +80,10 @@ API chọn generation/profile, tìm toàn kho và chỉ đưa filters người d
 
 ## 5. Outbox và công bố dữ liệu
 
-1. Transaction DB quan hệ tạo desired_version, search_projection intent, snapshot/artifact references và outbox event. Metadata snapshot được ghi bất biến trước commit; embedding có thể lưu artifact để retry không phải inference lại.
-2. Worker claim event với lease/fencing; đọc snapshot/artifact theo hash, kiểm tra lifecycle/version trước gửi.
+1. Transaction DB quan hệ tạo desired_version, index_state entry, snapshot/artifact references và sync jobs theo target/generation. Metadata snapshot được ghi bất biến trước commit; embedding có thể lưu artifact để retry không phải inference lại.
+2. Worker claim sync job với lease/fencing; đọc snapshot/artifact theo hash, kiểm tra lifecycle/version trước gửi.
 3. Upsert vector + payload Qdrant cùng một point, chờ thao tác áp dụng và kiểm tra khả năng đọc theo cấu hình consistency đã chọn. Timeout chưa rõ kết quả được retry cùng ID/nội dung, không sinh projection mới.
-4. Chờ graph projection cùng version đã được xác minh theo [graph consistency](graph-reranking-design.md). Transaction DB quan hệ so lease, desired_version, generation và lifecycle; nếu hợp lệ cập nhật published_projections, published_graph_projections/current_version, tăng graph_revision và job thành công. Nếu graph chưa ready, giữ point staging và retry target graph, không công bố version mới. Nếu không hợp lệ, point thành artifact chưa công bố, đưa vào cleanup.
+4. Chờ graph projection cùng version đã được xác minh theo [graph consistency](graph-reranking-design.md). Transaction DB quan hệ so lease, desired_version, generation và lifecycle; nếu hợp lệ đánh dấu cả hai index_state entries ready, cập nhật images.current_version, tăng search_configs.graph_revision và hoàn tất publish/item jobs. Target jobs chỉ ghi ready entry sau xác minh; ready entry chưa thuộc current_version vẫn là staging. Nếu graph chưa ready, giữ point staging và retry target graph, không công bố version mới. Nếu không hợp lệ, point thành artifact chưa công bố, đưa vào cleanup.
 5. Chỉ sau bước 4 ảnh được coi searchable. Không cần một payload flag ready để thay cho pointer SQL; point có thể được Qdrant tìm thấy trước commit nhưng API phải loại.
 
 Write Qdrant đã bay đi có thể hoàn tất sau khi lease mất hoặc ảnh bị xóa. Fencing SQL không ngăn được việc đó. Bảo vệ bằng point revision bất biến + pointer công bố có điều kiện + final catalog check; purge/reconciliation lặp lại để dọn point xuất hiện trễ. Không tuyên bố có transaction nguyên tử giữa hai hệ.
@@ -96,7 +100,7 @@ Reconciliation: catalog ready thiếu point → replay từ artifact hoặc snap
 
 ## 7. Reindex, backup và cấu hình scale
 
-Tạo collection generation mới, backfill, phát thay đổi vào generation mới qua outbox, catch-up và đối soát trước cutover. Active pointer trong DB quan hệ trỏ tên collection vật lý + profile; API không dùng alias đổi độc lập với encoder. Có thể dùng alias cho vận hành nếu không tạo nguồn cấu hình đọc thứ hai.
+Tạo collection generation mới trong search_configs building; dùng maintenance window chặn/drain ghi catalog và shared graph facts, rồi backfill/reconcile trên dữ liệu đứng yên. Mỗi image_versions giữ entries cho bản cũ/mới trong index_state. Trước cutover tạm dừng/drain search, đổi active config nguyên tử và vô hiệu hóa search_sessions cũ. Chưa có dual-write/catch-up hoặc rollback online tự động. Alias Qdrant không được là nguồn cấu hình đọc thứ hai. [Runbook maintenance](operations.md) quy định gate mở lại ghi và rollback khi dữ liệu đã đổi.
 
 Backup gồm DB quan hệ, Qdrant snapshot, graph snapshot hoặc artifacts đủ rebuild và object storage/metadata snapshots. Graph pointers/shared facts và graph_revision phải được đối soát trước phục vụ. Restore cách ly, đối soát generations/pointers/tombstones/payload hashes rồi mới phục vụ; snapshot các hệ không mặc định cùng một thời điểm. Không cho rebuild hoặc replay làm sống lại ảnh đã xóa.
 

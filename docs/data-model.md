@@ -1,120 +1,141 @@
-# Mô hình dữ liệu
+# Mô hình dữ liệu — 9 bảng SQL
 
-Trạng thái: schema logic cập nhật ngày 06/11/2026, chưa phải migration SQL. DB quan hệ giữ dữ liệu nghiệp vụ; Qdrant giữ vector và search metadata. UUID dùng cho định danh; thời gian lưu UTC. Payload và đồng bộ được mô tả ở [thiết kế Qdrant](qdrant-design.md).
+Cập nhật 06/11/2026 theo C13: thay schema 24 bảng bằng 9 bảng dưới đây. Đây là schema logic, chưa có migration hoặc ứng dụng. UUID dùng cho định danh; thời gian UTC. Vector/search metadata nằm ở Qdrant, entity/relations ở graph store, ảnh và artifacts ở object storage. Không tính các cấu trúc ngoài SQL vào số bảng này.
 
-## 1. Quan hệ
+## 1. Danh sách và quan hệ
+
+| Bảng | Trách nhiệm |
+| --- | --- |
+| users | Tài khoản, role, trạng thái và auth_version |
+| refresh_tokens | Token hash, chuỗi rotation và thu hồi theo lần login |
+| collections | Phân loại/bộ lọc ảnh, không ACL |
+| images | Danh tính, source identity, lifecycle và con trỏ version |
+| image_versions | Object/artifact references, hashes và trạng thái chỉ mục theo version |
+| jobs | Import, xử lý, outbox đồng bộ từng target, retry, purge và rebuild |
+| search_configs | Cấu hình versioned của encoder, vector/graph, fusion và VLM; cấu hình active |
+| search_sessions | Snapshot thứ tự kết quả hữu hạn và phân trang |
+| audit_events | Lịch sử thao tác quản trị và thay đổi cấu hình |
 
 ```mermaid
 erDiagram
-    SOURCES ||--o{ IMAGES : supplies
+    USERS ||--o{ REFRESH_TOKENS : owns
+    REFRESH_TOKENS o|--o{ REFRESH_TOKENS : rotates
     COLLECTIONS ||--o{ IMAGES : contains
     IMAGES ||--o{ IMAGE_VERSIONS : versions
-    IMAGE_VERSIONS ||--o{ SEARCH_PROJECTIONS : projected
-    RETRIEVAL_PROFILES ||--o{ INDEX_GENERATIONS : builds
-    INDEX_GENERATIONS ||--o{ SEARCH_PROJECTIONS : publishes
-    IMPORTS ||--o{ IMPORT_ITEMS : contains
-    IMAGE_VERSIONS ||--o{ INGESTION_JOBS : processes
-    SEARCH_SESSIONS ||--o{ SEARCH_ITEMS : snapshots
-    IMAGE_VERSIONS ||--o{ GRAPH_PROJECTIONS : projected
-    GRAPH_GENERATIONS ||--o{ GRAPH_PROJECTIONS : builds
-    GRAPH_PROJECTIONS ||--o| PUBLISHED_GRAPH_PROJECTIONS : publishes
-    USERS ||--o{ REFRESH_TOKEN_FAMILIES : authorizes
-    REFRESH_TOKEN_FAMILIES ||--o{ REFRESH_TOKENS : rotates
-    USERS o|--o{ SEARCH_SESSIONS : may_start
+    JOBS o|--o{ JOBS : groups
+    IMAGES o|--o{ JOBS : processes
+    SEARCH_CONFIGS ||--o{ SEARCH_SESSIONS : pins
+    USERS o|--o{ SEARCH_SESSIONS : starts
+    USERS o|--o{ AUDIT_EVENTS : acts
 ```
 
-Mỗi image thuộc một collection trong MVP. Collection chỉ tổ chức dữ liệu; mọi người tìm/xem cùng toàn kho đã công bố. Ảnh giống byte trong collections khác nhau vẫn có danh tính riêng. Đa collection cho cùng một image là thay đổi schema cần ADR mới.
+Không có bảng riêng cho source, refresh family, import/item, projection/published pointer, generation registry hoặc search items. Các khái niệm cần thiết vẫn tồn tại dưới dạng trường, job type hoặc artifact; không bỏ bảo đảm chỉ để giảm số bảng.
 
-## 2. Tài khoản và catalog
+## 2. Tài khoản và refresh token
 
-| Bảng | Trường chính và ràng buộc |
+`users`: id, email_normalized unique, password_hash, display_name, role=user/admin, status=active/disabled, revision, auth_version, created_at, updated_at. Visitor không có users record. Không lưu raw password/token.
+
+`refresh_tokens`: id, user_id, family_id, parent_id nullable, token_hash unique, auth_version, expires_at, consumed_at nullable, revoked_at nullable, revoke_reason nullable, created_at.
+
+- Mỗi login tạo một root row: family_id=id, parent_id=null. Root giữ auth_version tại login, deadline tuyệt đối (đề xuất 7 ngày) và trạng thái thu hồi chung qua revoked_at/revoke_reason.
+- Mỗi rotation thêm một row cùng user_id/family_id/auth_version/deadline; parent_id trỏ token trước đó. Root FK tự tham chiếu được kiểm tra trong transaction insert. Unique parent_id khi khác null bảo đảm mỗi token chỉ có một hậu duệ trực tiếp.
+- Root có thể đã consumed sau refresh đầu tiên nhưng nhóm vẫn active nếu root chưa revoked/chưa hết hạn. Protected request kiểm tra root theo JWT family_id, không từ chối chỉ vì root consumed.
+- Login/refresh/logout và thay đổi account cùng khóa user trước; refresh tiếp tục khóa root rồi token được trình (không khóa lặp khi token chính là root). Kiểm tra consumed và tạo successor trong cùng transaction. Reuse thu hồi root; mọi hậu duệ bị chặn bởi root check, không cần cập nhật từng row.
+- Logout thu hồi root; logout-all/password/role/status đổi tăng users.auth_version và thu hồi mọi root của user cùng transaction. Access JWT luôn kiểm tra user/version/root hiện hành để giữ cam kết thu hồi sau commit.
+- Giữ cả root và token đã consumed đến deadline nhóm cộng access TTL/clock skew; cleanup cả nhóm khi đủ điều kiện, không xóa root trước hậu duệ. Hash không ghi đè khi rotate vì cần nhận diện token cũ.
+
+Chi tiết cookie, access/refresh transport và races ở [auth-design.md](auth-design.md).
+
+## 3. Collections, images và image_versions
+
+`collections`: id, name, status, created_at. Mỗi image thuộc một collection; mọi người tìm cùng toàn kho. Không tự gộp ảnh khác source identity chỉ vì cùng checksum.
+
+`images`: id, collection_id, source_id, source_item_key, latest_input_revision, lifecycle=active/deleted, current_version nullable, desired_version, metadata_revision, created_at, updated_at, deleted_at nullable. Unique(source_id, source_item_key); version references phải thuộc đúng image. current_version chỉ đổi bằng compare-and-set sau khi đủ điều kiện publish.
+
+Source definitions nằm trong manifest cấu hình nguồn versioned ở object storage/config deployment: source_id ổn định, collection_id, allowed prefix, connector_config_ref, provenance và revision/hash. Không có bảng nguồn; images giữ identity, image_versions/jobs pin source_config_ref/hash để replay. Không thay nghĩa source_id hoặc tái sử dụng ID cho nguồn khác; secret chỉ là reference.
+
+`image_versions`: image_id, version, input_revision, input_payload_hash, source_config_ref/hash, source_object_version, object_key, thumbnail_key, metadata_snapshot_key/hash, sha256, byte_size, processing_status, index_state JSON, created_at. Unique(image_id, version); version tăng đơn điệu; metadata-only update cũng tạo version mới nhưng có thể tái sử dụng embedding đúng byte/model/processor hash.
+
+Index_state có schema versioned, chỉ chứa references/hashes/trạng thái, không vector hoặc toàn bộ metadata/graph:
+
+```json
+{
+  "schema_version": 1,
+  "vector": {
+    "vg001": {
+      "projection_revision": 1,
+      "point_id": "point-example",
+      "payload_hash": "sha256:example",
+      "embedding_artifact_key": "artifacts/image-1/v1/embedding",
+      "state": "ready"
+    }
+  },
+  "graph": {
+    "gg001": {
+      "projection_revision": 1,
+      "artifact_key": "artifacts/image-1/v1/graph.json",
+      "artifact_hash": "sha256:example",
+      "state": "ready"
+    }
+  }
+}
+```
+
+Keys là generation ID nội bộ lấy từ search_configs; mỗi entry đi từ pending/applying tới ready/failed và giữ ID/hash bất biến sau khi enqueue. Entry ready của version đang current không được sửa refs/hashes; thay nội dung projection trong cùng generation phải tạo content version mới, kể cả dùng lại ảnh/embedding. Rebuild dùng generation mới. Không ghi đè point đã công bố. Schema validation, CAS revision và khóa row ngắn ngăn worker sửa mất entry của target khác. JSON nhỏ và giới hạn active/build/retained generations theo retention, không nhét lịch sử vô hạn.
+
+Con trỏ công bố được suy từ images.current_version + index_state của version đó + generation của active search_configs. Ready entry của desired_version chưa current vẫn là staging. Publish kiểm tra cả vector và graph đúng generation ready, desired_version/lifecycle/lease còn hợp lệ, rồi đổi current_version cùng tăng graph_revision của config active trong transaction. Graph rỗng đã xác minh là ready; graph lỗi không phải rỗng. Final check theo các trường này thay cho bảng published pointers.
+
+Title/tags/license/kích thước và metadata hiển thị đọc từ đúng Qdrant point; snapshot object storage dùng rebuild/audit. Tombstone chặn response mới ngay; purge mọi target/generation và artifacts không còn tham chiếu theo retention, không xóa shared entity còn được dùng.
+
+## 4. jobs — hàng đợi bền vững và transactional outbox
+
+`jobs`: id, parent_id nullable, type, status, image_id nullable, content_version nullable, config_id nullable, target_type nullable, target_generation nullable, dedupe_key unique, idempotency_key nullable, request_hash nullable, payload JSON, depends_on JSON, result JSON, attempts, next_attempt_at, lease_token, lease_until, created_by nullable, created_at, updated_at, last_error nullable.
+
+| Job type | Vai trò |
 | --- | --- |
-| collections | id, name, status, created_at; status active/disabled |
-| users | id, email_normalized unique, password_hash, display_name, role, status, revision, auth_version, created_at, updated_at; role chỉ nhận user/admin, mặc định user; visitor là khách không có bản ghi tài khoản. Status active/disabled; revision tăng khi admin sửa tài khoản, auth_version tăng khi đổi role/status/password |
-| refresh_token_families | id, user_id, auth_version, created_at, expires_at, revoked_at, revoke_reason; một family mỗi lần login, deadline tuyệt đối không trượt |
-| refresh_tokens | id, family_id, token_hash unique, parent_token_id nullable, replaced_by_token_id nullable, created_at, expires_at, consumed_at, revoked_at; không lưu token thô |
-| sources | id, collection_id, type=private trong MVP, name, connector_config_ref, provenance, created_at; không lưu secret trực tiếp |
-| images | id, collection_id, source_id, source_item_key, latest_input_revision, lifecycle, current_version, desired_version, metadata_revision, created_at, updated_at, deleted_at |
-| image_versions | image_id, version, input_revision, input_payload_hash, source_object_version, object_key, thumbnail_key, metadata_snapshot_key, metadata_snapshot_hash, sha256, byte_size, processing_status, created_at |
+| crawl / crawl_item / fetch_media | Thu thập nguồn cấu hình/metadata/facts, validate/download có checkpoint, xuất manifest rồi chuyển import pipeline |
+| import | Job cha: manifest/source refs, request idempotency, tổng tiến độ |
+| import_item | Một dòng manifest, line_number/source key/input revision, lỗi hoặc kết quả riêng |
+| prepare_image | Validate/decode, thumbnail, immutable snapshots/artifacts và encoder |
+| sync_vector / sync_graph | Một target/generation cụ thể; chính là outbox delivery |
+| publish_image | Chờ hai target ready, CAS current_version và hoàn tất item |
+| sync_facts | Stage shared graph facts/manifest và công bố revision |
+| purge / reconcile / rebuild | Xóa, kiểm tra integrity hoặc dựng chỉ mục trong maintenance |
 
-Unique images(source_id, source_item_key) định danh ổn định qua các lần import. Không dùng checksum làm image_id vì cùng nội dung có thể là hai bản ghi nguồn khác nhau. source.collection_id phải trùng image.collection_id. object_key được backend sinh, không đưa ra như URL công khai.
+Import root ID chính là import_id; import_item job ID chính là item_id trên API. Child processing jobs tham chiếu import_item; không tạo riêng bảng imports/items. Item invalid có thể failed mà chưa có image_id. Parser streaming dùng dedupe_key(root_id, line_number), payload hash và checkpoint để replay không nhân đôi dòng; trùng source key/revision trong manifest được phân loại theo quy tắc ingestion. Counts tính từ import_item children, không đếm các job sync; chỉ kết thúc import sau khi đối soát parser và item states.
 
-lifecycle: active/deleted. current_version có thể null trước khi nhập thành công; desired_version là số version mới nhất được yêu cầu. image_versions unique(image_id, version), version tăng đơn điệu; byte_size và kích thước ảnh trong payload phải dương khi đã validate.
+Khi catalog đổi desired_version/tombstone hoặc khi artifact refs được chốt, tạo các jobs xử lý/sync/purge tương ứng trong cùng transaction SQL. Không ghi DB rồi enqueue bằng một bước rời; jobs thay cả queue và outbox. Unique dedupe_key gồm type/identity/version/target generation/projection revision hoặc source fact revision. Parent/depends_on phải tồn tại, không chu trình; worker chỉ claim khi dependencies succeeded. Payload/result có schema theo type, không chứa vector, raw secret hoặc ảnh lớn.
 
-Title/tags/license/width/height/mime_type và provenance hiển thị nằm trong payload Qdrant, không lặp thành bảng search metadata SQL. Snapshot JSON bất biến trong object storage lưu nguồn khôi phục của payload; DB quan hệ chỉ giữ key/hash và các trường nghiệp vụ cần cho identity, version và trạng thái; tài khoản/role nằm trong SQL. Source provenance ở sources chỉ mô tả nguồn, không thay payload từng ảnh. Khi sửa metadata, tạo version dùng lại object/embedding nếu tương thích. metadata_revision trên images phục vụ khóa lạc quan và audit. Không cập nhật mù nếu phiên bản client đã cũ.
+Claim dùng transaction ngắn, lease/fencing; I/O ngoài transaction. Worker chỉ cập nhật target state khi lease/desired_version còn đúng; write ngoài SQL đã bay đi được bảo vệ bằng identity bất biến và final catalog check. Retry target graph lỗi không chạy lại vector đã ready. Failed dependency phải làm item failed hoặc bị superseded/cancelled theo catalog; không để import treo vô hạn. Admin retry item reset/enqueue đúng các bước lỗi có thể retry cùng transaction, giữ ID/hash của projection không đổi và không đánh dấu thành công bước chưa chạy.
 
-Refresh tokens dùng hash của opaque token đủ entropy; access JWT không cần lưu từng token vào SQL. Token đã consumed phải giữ tối thiểu tới family expiry cộng access TTL/clock skew để phát hiện reuse. Rotation khóa theo thứ tự user → family → token, consumed chỉ một lần; parent/replacement phải cùng family. Logout-all/password/role/status thay đổi cập nhật auth_version và revoke families nguyên tử. Không cache revocation theo cách làm mất cam kết hiệu lực sau commit.
+## 5. search_configs — cấu hình và vòng đời chỉ mục
 
-## 3. Model và vector
+`search_configs`: id, revision, status=building/validating/active/retired/failed, encoder_config JSON, vector_index JSON, keyword_config JSON, graph_config JSON, fusion_config JSON, reranker_config JSON, failure_policy JSON, source_config_ref/hash, graph_revision, graph_manifest_key/hash, maintenance JSON, created_at, activated_at nullable.
 
-| Bảng | Trường chính và ràng buộc |
-| --- | --- |
-| retrieval_profiles | id, model_id, model_revision, processor_revision, dimension, normalization, distance_metric, ranking_version, keyword_config, graph_config, reranker_config, failure_policy, created_at; bất biến sau khi dùng |
-| index_generations | id, profile_id, physical_location, status, source_watermark, created_at, activated_at |
-| active_search_config | config_key, profile_id, generation_id, graph_generation_id, graph_revision, revision; một cấu hình đọc active, pin cả retrieval/fusion/rerank và các generation tương thích |
-| search_projections | generation_id, image_id, content_version, projection_revision, point_id, payload_hash, state, applied_at; không chứa vector hoặc search payload |
-| published_projections | generation_id, image_id, point_id, content_version; unique(generation_id, image_id), tham chiếu projection đã kiểm chứng |
+Vector_index chứa generation ID, physical collection, dimension/normalization/metric. Graph_config chứa generation/location, schema/linker revisions, traversal templates/budgets và graph scoring. Reranker_config pin VLM/model/processor/prompt/schema/decoding, rendition và window. Active row là nguồn cấu hình đọc duy nhất, lấy bằng status=active; unique constraint phù hợp engine bảo đảm tối đa một active. Không nhận collection/graph endpoint từ client.
 
-Generation states: building → validating → active → retired; failed có thể kết thúc build lỗi. Khi chuyển active, cập nhật pointer và trạng thái trong một transaction hoặc thao tác điều phối tương đương; chỉ có một pointer đang phục vụ.
+Các trường định nghĩa model/index/ranking bất biến khi dùng; runtime fields status, graph_revision, manifest pointer, maintenance có thể cập nhật bằng CAS/transaction và audit. Đổi định nghĩa tạo row mới. Config VLM/prompt mới có thể tái sử dụng vector/graph generation tương thích; khi activation phải mang theo graph_manifest và graph_revision hiện hành dưới khóa điều phối, không phục hồi manifest cũ của bản config đã retired.
 
-Model và số chiều phải khớp profile trước upsert Qdrant. Vector không được có NaN/Inf. Index metric và query metric phải trùng. search_projections unique(generation_id, image_id, content_version, projection_revision) và unique(generation_id, point_id). Point ID bất biến cho một projection; published_projections là con trỏ kiểm chứng, không phải kho metadata. Nếu tái sử dụng embedding, vẫn cần xác minh hash/model/processor và tạo projection đúng version mới.
+Shared facts có immutable source revision/provenance trong graph store và artifacts. sync_facts stage dữ liệu rồi publish manifest key/hash + tăng graph_revision trong active config; adapter chỉ traversal tập fact revisions thuộc manifest đã công bố. Graph không hỗ trợ view này phải dùng maintenance để thay snapshot, không đọc staging. Không có registry facts SQL riêng.
 
-### 3.1. Graph và reranker profiles
+Activation mới vô hiệu hóa mọi snapshot config cũ; active config và maintenance gates không được cache làm mất kiểm tra sau commit. MVP hỗ trợ một cấu hình active và tối đa một bản build tại một thời điểm. Đổi encoder/graph schema dùng maintenance: chặn mới các ghi catalog/fact/import/delete, drain writers/jobs, dựng index trên dữ liệu đứng yên, đối soát và chuyển active nguyên tử. Search có thể tiếp tục trên bản cũ trong build nếu tài nguyên đủ; cutover tạm dừng/drain search và vô hiệu hóa snapshot cũ. Tạm dừng ghi do bảo trì được lưu bền trong runtime config, kiểm tra cả API và worker. Không hứa dual-write/catch-up hoặc rollback online tự động. Runbook đầy đủ ở [operations.md](operations.md).
 
-Graph_config chứa graph schema/linker revision, predicates/directions, hard-vs-boost rules, hop/fan-out/node/candidate budgets và graph ranking. Reranker_config chứa model/checkpoint revision, processor/image rendition policy, prompt/schema revision, decoding, rerank_window, batch/concurrency/deadline. Failure_policy khai báo required branches và fallback; mặc định strict. Không lưu secret trong các profile.
+## 6. Search snapshots và audit
 
-| Registry/projection trong DB quan hệ | Trường logic |
-| --- | --- |
-| graph_generations | id, schema_revision, linker_revision, physical_location, status, source_watermark, created_at; building/validating/active/retired/failed |
-| graph_projections | graph_generation_id, image_id, content_version, projection_revision, artifact_key, artifact_hash, state, applied_at; unique theo generation/image/version/revision, không chứa toàn bộ graph |
-| published_graph_projections | graph_generation_id, image_id, content_version, projection_revision; unique(generation, image), trỏ projection đã kiểm chứng |
-| graph_fact_revisions | graph_generation_id, fact_key, source_revision, artifact_key/hash, state, published_revision; intents/pointers cho shared entity/relation, không sao chép toàn graph vào catalog |
+`search_sessions`: id, user_id nullable, owner_key_hash, query_hash, query_text nullable theo retention, filters JSON, config_id, graph_revision, hard_graph_constraints JSON, query_plan JSON, items JSON, degraded, degradation_reason, expires_at, created_at.
 
-Entity, aliases và relation với provenance nằm trong graph storage adapter; image node gắn image_id/content_version/projection_revision. Shared facts có revision độc lập, không bị xóa chỉ vì một ảnh tham chiếu bị purge. Graph rỗng là projection ready có artifact xác minh được. Graph_revision là epoch công bố đơn điệu trong active config; tăng khi published image graph pointer hoặc shared fact đổi. Worker staging chưa được publish không được tham gia traversal. Luồng kiểm chứng/công bố cụ thể ở [graph và reranking](graph-reranking-design.md).
+C18 query_plan giữ mode/targets/counts/statuses và evidence refs; target_ids trong items giữ grouping, dedup top-level image ID nhưng cho phép nhiều nhóm tham chiếu. Không thêm bảng target/result riêng. Items là mảng có thứ tự tối đa 200 phần tử `{image_id, content_version, point_id, target_ids}`; validate không trùng ID và đúng version/point. Chỉ chứa shortlist đã rerank hoặc fusion shortlist khi fallback tường minh; ví dụ window=50 thì tối đa 50. Không có bảng item riêng. Mỗi trang duyệt theo vị trí, final-check current_version/index_state/lifecycle, không rerank lại. Cursor pin owner/config/position; config active đổi hoặc graph revision đổi với hard constraint trả SEARCH_EXPIRED. X-Search-Owner không phải login hoặc ACL.
 
-Profile mới có thể dùng lại vector generation khi encoder/processor/dimension/metric và payload tương thích; kiểm tra tương thích trước activation. index_generations.profile_id giữ profile build ban đầu, active_search_config.profile_id là profile truy vấn. Đổi VLM/prompt không tự tạo embedding mới. Đổi graph schema/linker tạo graph generation mới và backfill/catch-up; cutover cấu hình đọc nguyên tử.
+`audit_events`: id, actor_id nullable cho tác vụ hệ thống, action, resource_type, resource_id, safe_context JSON, created_at. Thay đổi quản trị tài khoản/catalog/config và maintenance phải có audit trong cùng transaction thích hợp. Không lưu password/token/signed URL/ảnh hoặc tùy tiện ghi raw query.
 
-## 4. Imports và jobs
+## 7. Index, retention và kiểm chứng
 
-| Bảng | Trường chính và ràng buộc |
-| --- | --- |
-| imports | id, collection_id, source_id, manifest_key, idempotency_key, request_hash, status, counters, created_by, created_at |
-| import_items | id, import_id, source_item_key, input_revision, image_id, content_version, status, error_code, safe_error_detail |
-| ingestion_jobs | id, import_item_id, image_id, content_version, generation_id, pipeline_version, status, attempts, next_attempt_at, lease_token, lease_until, last_error |
-| catalog_changes | event_id, image_id nullable, content_version nullable, metadata_revision, fact_key nullable, source_revision nullable, artifact_ref, event_type, created_at; ghi cùng transaction đổi catalog để catch-up/reconcile |
-| generation_change_deliveries | target_type=qdrant/graph, target_generation_id, event_id, status, applied_at; unique(target_type, target_generation_id, event_id), retry riêng mỗi target; hỗ trợ cả image và shared-fact event |
+- Unique email_normalized; token_hash; parent_id khác null. Index refresh_tokens(user_id), family_id, expires_at; FK parent/root cùng user/family được validate trong transaction.
+- Unique images(source_id, source_item_key), image_versions(image_id, version). Index lifecycle, collection_id, jobs(parent_id, type, status), jobs(status, next_attempt_at), lease_until và dedupe_key. Không index mọi JSON field.
+- Unique active search config; index search_sessions.expires_at và audit timestamp/resource. CAS/row locks bảo vệ index_state, config epoch và publish.
+- Snapshot TTL đề xuất 15 phút; query logging mặc định tắt; root/token history, jobs/idempotency, tombstones, artifacts và audit dọn theo Q09. Job root giữ ít nhất cửa sổ idempotency; job/artifact đang cần retry/rebuild không được cleanup.
+- Reconcile so catalog/index_state với Qdrant/graph/object hashes, requeue jobs thiếu, dọn orphan sau grace period; không tự publish chỉ vì thấy point/edge. Backup/restore gồm SQL và các artifacts/config nguồn versioned.
 
-Idempotency key được scope theo principal và thao tác; key trùng nhưng request_hash khác trả conflict. Một import_item có thể sinh nhiều job khi phải ghi hai generation trong giai đoạn reindex. Unique job theo (image_id, content_version, generation_id, pipeline_version); không enqueue lặp nếu job đã thành công.
+Đánh đổi C13: ít bảng hơn nhưng cần validate JSON/job types trong ứng dụng, source administration qua cấu hình, reindex có maintenance window và chưa hỗ trợ nhiều generation ghi song song. Giữ 9 bảng này làm schema hiện hành; sơ đồ chi tiết cũ 24 bảng đã được thay thế, chưa có migration dữ liệu thực tế.
 
-Counters import có thể cập nhật tăng dần nhưng phải đối soát từ trạng thái import_items trước khi báo completed. Item chỉ succeeded khi thỏa điều kiện phục vụ đã định nghĩa; skipped/superseded/cancelled được đếm riêng, không coi là thành công xử lý mới.
-
-catalog_changes là transactional outbox bắt buộc để đồng bộ Qdrant, graph và reindex; image_id/content_version nullable với shared-fact events, khi đó có fact_key/source_revision và durable artifact reference; event tham chiếu snapshot/artifact bền vững, không chứa vector lớn. Không coi sequence ID là thứ tự commit tuyệt đối: event có ID nhỏ có thể commit muộn. Consumer theo dõi delivery chưa xử lý và có barrier/đối soát trước cutover, không chỉ lưu max(event_id) rồi bỏ mọi ID nhỏ hơn. Event cũ không được công bố đè version/tombstone mới. Retention events phải dài hơn cửa sổ backfill/catch-up và rollback đang hoạt động.
-
-## 5. Phiên tìm kiếm và audit
-
-| Bảng | Trường chính và ràng buộc |
-| --- | --- |
-| search_sessions | id, user_id nullable, owner_key_hash, query_hash, query_text theo retention, filters, profile_id, generation_id, graph_generation_id, graph_revision, hard_graph_constraints, ranking_version, degraded, degradation_reason, expires_at, created_at; snapshot phân trang, không phải cơ chế login |
-| search_items | session_id, position, image_id, content_version, point_id; unique(session_id, position) và unique(session_id, image_id) |
-| audit_events | id, actor_id, action, resource_type, resource_id, safe_context, timestamp |
-
-Search_items chỉ chứa thứ tự shortlist đã VLM rerank, hoặc fusion shortlist khi fallback tường minh; không nối tail chưa chấm. Lưu VLM/prompt/fusion revisions qua profile bất biến; không rerank lại khi đọc cursor. Nếu hard_graph_constraints có hiệu lực và graph_revision đổi, session trả SEARCH_EXPIRED.
-
-Không có bảng feedback hoặc collection_grants trong MVP. Search/thumbnail public; detail/download kiểm tra JWT access token hợp lệ và trạng thái thu hồi, không ACL theo ảnh. Audit ghi thay đổi dữ liệu, tài khoản/role/status và cấu hình; không ghi mật khẩu/token. refresh_token_families/refresh_tokens phục vụ rotation/revocation, không có bảng auth_sessions. search_sessions chỉ phục vụ phân trang; owner_key ngẫu nhiên từ X-Search-Owner chống dùng nhầm cursor, không giới hạn ảnh được tìm. Định dạng access/refresh, cookie transport và thu hồi token ở [auth-design.md](auth-design.md).
-
-## 6. Index và concurrency
-
-- B-tree trên source identity; image collection/lifecycle; version image_id/version.
-- Partial index jobs(status, next_attempt_at) cho pending/retry_wait; index lease_until cho tác vụ đang chạy hết lease.
-- HNSW và payload indexes nằm ở Qdrant theo generation. collection_id chỉ lọc khi người dùng chọn; không suy từ role/user. Sau retrieval, batch-check trạng thái catalog và pointer trước response. DB quan hệ không có vector index.
-- Index expires_at cho search session cleanup; refresh_token_families có user_id/revoked_at/expires_at indexes; refresh_tokens có unique token_hash và index family_id; users có unique email_normalized. Tránh index mọi trường JSON tùy ý.
-- Claim jobs bằng transaction ngắn với khóa bỏ qua row đã lock hoặc cơ chế tương đương; lease_token được so khi gia hạn/commit.
-- Cập nhật current_version bằng compare-and-set desired_version/lifecycle; stale worker chỉ có thể lưu artifact chưa công bố để dọn sau.
-
-## 7. Xóa, retention và đối soát
-
-Delete tạo tombstone trong images ngay; tăng metadata_revision và vô hiệu hóa job chờ. Purge vật lý chạy nền, xóa vector và graph image projections/cạnh gắn ảnh ở mọi generation rồi object khi không còn tham chiếu cần giữ. Quy trình giữ audit theo retention đã chốt và kiểm tra object dùng chung trước khi xóa.
-
-Session TTL đề xuất 15 phút; raw query log đề xuất 7 ngày cho pilot, tắt lưu query nếu chưa được chốt. Refresh token records và audit retention chờ Q09; feedback không nằm trong MVP. Query/session hết TTL được dọn theo batch. Backup có thời hạn riêng; xóa trong hệ live không đồng nghĩa đã xóa ngay khỏi backup.
-
-Reconciliation định kỳ phát hiện ready thiếu vector/object, job lease hết hạn, artifact mồ côi, counters lệch, vector/graph của ảnh deleted, dangling edges và shared-fact pointer lệch. Công bố current_version đòi cả Qdrant và graph projection active ready; kiểm tra lại graph epoch sau traversal/VLM. Không tự công bố artifact chỉ dựa trên việc nó tồn tại trong storage.
+C14–C18: FastAPI/PostgreSQL đã chọn. Source type đề xuất private hoặc web_import theo source config, pin external ID/version, original page/media URLs và attribution vào snapshots/Qdrant payload. Crawl root/result lưu manifest_ref/import_id, items/jobs không chứa toàn bộ HTML hoặc ảnh; external web data được sanitize/validate trước inference/hiển thị. Metadata địa danh và local resource budget ở [MVP địa danh](landmark-mvp-plan.md).
