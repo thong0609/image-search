@@ -1,0 +1,8 @@
+# Example only; acquisition starts in phase 1/2.
+sources:
+  - id: commons-landmarks
+    type: web_import
+    enabled: false
+    allowed_hosts: [commons.wikimedia.org, upload.wikimedia.org]
+    max_images: 1500
+    seeds: []

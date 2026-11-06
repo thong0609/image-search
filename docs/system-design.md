@@ -106,6 +106,6 @@ Bảo trì C13: API/worker đọc maintenance state bền trong search_configs t
 
 ## 9. Local địa danh và acquisition
 
-FastAPI và PostgreSQL đã chốt C16. Chạy local trước trên Intel Raptor Lake-P, RAM hệ thống 16 GB dùng chung với GPU; đề xuất encoder CPU, VLM remote adapter và API/worker cùng codebase. Không chọn model local dựa trên giả định có 16 GB VRAM. Storage/graph adapter cho sample có thể dùng filesystem/immutable JSON ngoài Git, không thêm SQL tables; deployment/cloud/frontend chưa chốt.
+FastAPI và PostgreSQL đã chốt C16. Chạy local trước trên Intel Raptor Lake-P, RAM hệ thống 16 GB dùng chung với GPU; đề xuất encoder CPU, VLM remote adapter và API/worker cùng codebase. Không chọn model local dựa trên giả định có 16 GB VRAM. Storage/graph adapter cho sample có thể dùng filesystem/immutable JSON ngoài Git, không thêm SQL tables; deployment/cloud chưa chốt; frontend Next.js/TypeScript và stack UI theo C19, bố cục/cấu trúc ở [kế hoạch MVP mục 7](landmark-mvp-plan.md#7-frontend-tối-giản).
 
 Crawl là acquisition offline: configured source/seed → jobs crawl/fetch → manifest/object artifacts → import/encode/graph → publish. Search chỉ đọc kho đã publish, không gọi crawler trên đường truy vấn. Metadata địa danh/provenance và facts theo [MVP địa danh](landmark-mvp-plan.md). Single/multi-target/multi-hop có query_plan versioned; nhiều target tạo nhiều retrieval subplans, merge kết quả theo nhóm và giữ budget chung, không fusion lẫn target thành một quota duy nhất. Search_sessions.query_plan/items JSON giữ grouping/evidence refs cho pagination.

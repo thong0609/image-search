@@ -1,6 +1,6 @@
 # Kế hoạch MVP địa danh và dữ liệu web
 
-Cập nhật 06/11/2026. Đã xác nhận: tạm chọn địa danh để người dùng hình dung nơi đó; tìm tiếng Việt; một mục tiêu, nhiều mục tiêu trong một câu và multi-hop; cần bổ sung thu thập web vì chưa có dataset; một người phát triển bằng FastAPI/PostgreSQL; local có RAM hệ thống 16 GB, Intel Raptor Lake-P dùng RAM chia sẻ, không có VRAM chuyên dụng cố định; cho phép gửi ảnh tới API VLM ngoài. Chưa có code hoặc dữ liệu đã crawl. Nguồn/giới hạn/model/ngân sách dưới đây là đề xuất, không phải kết quả đo hoặc khoản chi được duyệt.
+Cập nhật 06/11/2026. Đã xác nhận: tạm chọn địa danh để người dùng hình dung nơi đó; tìm tiếng Việt; một mục tiêu, nhiều mục tiêu trong một câu và multi-hop; cần bổ sung thu thập web vì chưa có dataset; một người phát triển bằng FastAPI/PostgreSQL; local có RAM hệ thống 16 GB, Intel Raptor Lake-P dùng RAM chia sẻ, không có VRAM chuyên dụng cố định; cho phép gửi ảnh tới API VLM ngoài. Backend đã có scaffold phase 0; frontend có scaffold phase 0; chưa có dữ liệu crawl hoặc nghiệp vụ UI. Nguồn/giới hạn/model/ngân sách dưới đây là đề xuất, không phải kết quả đo hoặc khoản chi được duyệt.
 
 ## 1. Ba kiểu truy vấn
 
@@ -77,7 +77,7 @@ Với sample nhỏ, đề xuất graph adapter đọc immutable JSON artifacts v
 
 ## 5. Local, model và chi phí
 
-FastAPI + PostgreSQL đã chọn; Qdrant giữ vector/metadata; một codebase với API và worker riêng process. Graph adapter và lưu ảnh sau interface để đổi triển khai khi deploy. Local đề xuất filesystem ngoài Git làm object-storage adapter; giữ key/hash/immutability và đường đọc media qua API, không công khai thư mục ảnh gốc. S3-compatible storage/cloud/frontend vẫn chưa chốt.
+FastAPI + PostgreSQL đã chọn; Qdrant giữ vector/metadata; một codebase với API và worker riêng process. Graph adapter và lưu ảnh sau interface để đổi triển khai khi deploy. Local đề xuất filesystem ngoài Git làm object-storage adapter; giữ key/hash/immutability và đường đọc media qua API, không công khai thư mục ảnh gốc. S3-compatible storage/cloud chưa chốt; kế hoạch frontend ở mục 7.
 
 RAM 16 GB là RAM hệ thống chia sẻ với GPU Intel, không có VRAM dedicated cố định; không suy ra CUDA hoặc dung lượng inference GPU từ con số này. Khởi đầu encoder CPU với một checkpoint nhỏ của CLIP/SigLIP 2 để benchmark batch nhỏ (1–4), một worker inference, không nạp cả hai model cùng lúc. Chọn checkpoint sau đo tiếng Việt/latency/memory. Intel acceleration chỉ nghiên cứu nếu có nhu cầu và hỗ trợ runtime đã kiểm chứng.
 
@@ -93,6 +93,44 @@ Không thêm bảng crawl/place/entity. Crawl dùng jobs types crawl/crawl_item/
 
 Search_sessions thêm query_plan JSON chứa mode, targets/aliases/resolved entity IDs, requested counts và evidence refs; items có target_ids để snapshot giữ grouping. Định nghĩa contract ở [api-contract.md](api-contract.md). Evidence lưu tối thiểu theo retention, không ghi chain-of-thought. Giữ config/graph revision và final-check như trước.
 
-Trình tự đề xuất cho một người: dựng scaffold FastAPI/PostgreSQL/Qdrant và tests fixtures → một source adapter + sample nhỏ → single target → multi-target → graph facts/multi-hop → VLM rerank/ablation toàn pipeline → load/restore/deploy. Graph và VLM vẫn thuộc phạm vi đầy đủ, chỉ chia thứ tự triển khai để kiểm chứng từng phần. Frontend chưa chốt; có thể dùng API docs/CLI trong thử nghiệm đầu.
+Trình tự đề xuất cho một người: dựng scaffold FastAPI/PostgreSQL/Qdrant và tests fixtures → một source adapter + sample nhỏ → single target → multi-target → graph facts/multi-hop → VLM rerank/ablation toàn pipeline → load/restore/deploy. Graph và VLM vẫn thuộc phạm vi đầy đủ, chỉ chia thứ tự triển khai để kiểm chứng từng phần. Scaffold Next.js nằm trong phase 0; phase 3 bắt đầu màn hình tìm kiếm theo mục 7. API docs/CLI dùng để thử pipeline trước khi có UI nghiệp vụ.
 
 Những gì còn cần chốt: seed địa danh/nguồn cụ thể, mapping facts/độ phủ, model và usage/cost benchmark, deadline, tải pilot, quality gate, media access/recovery/retention theo sổ quyết định. Không chờ các mục này để dựng scaffold và deterministic fixtures, nhưng không nhập toàn kho hoặc tuyên bố đạt semantic quality trước khi có dữ liệu/nhãn thật.
+
+## 7. Frontend tối giản
+
+Frontend dùng Next.js App Router + TypeScript, Tailwind CSS, shadcn/ui và TanStack Query; gọi FastAPI qua native fetch. Frontend đặt trong `frontend/` cùng repository, có manifest/lockfile riêng. Node.js 24 LTS và npm được pin trong frontend/.nvmrc/package.json; dependencies được khóa trong package-lock.json. Next.js phụ trách trang/layout và tương tác; nghiệp vụ, quyền, crawler và inference nằm ở FastAPI.
+
+| Màn hình | Bố cục và hành vi |
+|---|---|
+| Trang bắt đầu | Nền trắng, logo nhỏ, ô tìm kiếm và vài ví dụ tiếng Việt |
+| Kết quả | Thanh tìm kiếm phía trên, filters gọn bên dưới, lưới thumbnail giữ tỷ lệ, tên địa danh và nguồn ngắn |
+| Nhiều mục tiêu | Tiêu đề nhóm nhỏ theo địa danh, ảnh và trạng thái thiếu kết quả riêng từng nhóm |
+| Chi tiết ảnh | Panel bên phải trên desktop, toàn màn hình trên mobile; ảnh, mô tả, tác giả, nguồn, license và nút tải |
+| Multi-hop | Mục mở rộng “Thông tin tìm kiếm” hiển thị facts/path và nguồn; không hiển thị chain-of-thought |
+| Tài khoản/admin | Login, đổi mật khẩu; trang admin riêng cho crawl/import, lỗi/retry, kho ảnh và tài khoản |
+
+Khách được search/xem thumbnail; chọn ảnh để mở chi tiết hoặc download chuyển login rồi quay về ảnh đã chọn bằng returnTo nội bộ. Giữ query, filters, vị trí kết quả khi đóng panel/quay lại. Không đưa tên model, điểm cosine hoặc thông số pipeline vào giao diện tìm kiếm thông thường.
+
+```text
+frontend/src/
+├── app/                  # Routes, layouts, trang tìm kiếm/tài khoản/admin
+├── features/
+│   ├── search/           # Search bar, filters, grouped results
+│   ├── images/           # Image grid và detail panel
+│   ├── auth/             # Token lifecycle và account UI
+│   └── admin/            # Crawl/import/catalog/accounts
+├── components/ui/        # Components shadcn dùng chung
+└── lib/
+    ├── api/              # Fetch client, types, errors
+    └── providers/        # QueryClient và auth context
+```
+
+- Query/filters nằm trong URL; cursor, search owner key, access token và trạng thái panel giữ trong memory phù hợp API contract. Cursor/owner key không đưa vào URL chia sẻ. Mở lại URL tạo lượt tìm mới.
+- TanStack Query quản lý loading/error, tải thêm bằng cursor và polling admin jobs. Dùng AbortSignal khi đổi query; không để response cũ ghi đè lượt tìm mới. Snapshot hết hạn thì bắt đầu lượt mới, không tự nối kết quả hai snapshots.
+- Fetch client tập trung base URL, request/error types, bearer access và refresh single-flight. Access token giữ trong memory; refresh cookie HttpOnly do FastAPI cấp, không ghi token vào localStorage. Cache chi tiết/media/tài khoản được xóa khi logout hoặc đổi user; không cache chung URL ảnh đã cấp sau login.
+- Ưu tiên cùng origin qua proxy `/v1/*` tới FastAPI, giữ cookie Path `/v1/auth`; cấu hình Origin/header theo auth contract. Secret/API key VLM chỉ ở backend. Next.js server cache không dùng cho response protected chứa dữ liệu hoặc media URL theo user.
+- Lưới ảnh dùng CSS Grid/Flex, width/height từ API để hạn chế nhảy layout, thumbnail lazy-load và placeholder. Chỉ dùng host ảnh đã cấu hình; panel có close/Escape, focus hợp lý và ảnh có alt text. Mobile ưu tiên ô tìm kiếm và ảnh, filters thu gọn.
+- Các trạng thái cần có: chưa tìm, loading, có kết quả, nhóm rỗng/thiếu ảnh, lỗi/retry, degraded, maintenance, ảnh mất/đã xóa, cursor hết hạn và login bắt buộc.
+
+FE scaffold bắt đầu ở phase 0; màn hình tìm kiếm mock/API bắt đầu ở phase 3, grouping ở phase 4, evidence ở phase 5, degraded/timeout ở phase 6; phase 7 hoàn thiện auth/admin và responsive/accessibility. Chi tiết đầu ra từng phase nằm trong [delivery-plan.md](delivery-plan.md). Scaffold frontend đã có; các màn hình nghiệp vụ được triển khai theo từng phase.
