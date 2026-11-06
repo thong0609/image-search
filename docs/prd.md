@@ -4,6 +4,8 @@ Trạng thái: bản nháp review v0.1. Phạm vi đã xác nhận được tác
 
 Ràng buộc kỹ thuật đã xác nhận ngày 05/11/2026: Qdrant lưu vector và search metadata, tách biệt DB quan hệ; không dùng pgvector. DB quan hệ giữ nghiệp vụ/quyền và chưa chốt engine.
 
+Cập nhật phạm vi 06/11/2026 (C12): kết hợp vector search, keyword search và graph search; dùng VLM rerank sau fusion. Vai trò hai thành phần đã được xác nhận; graph engine, model VLM và tham số vận hành còn là đề xuất.
+
 ## 1. Bài toán và giá trị
 
 Người dùng cần tìm ảnh phù hợp với mô tả trong kho riêng mà không phải nhớ tên file hoặc duyệt thủ công từng thư mục. Kết quả cần đủ liên quan để người dùng chọn được ảnh, có thể xem nguồn và xem toàn bộ ảnh đang hiển thị trong kho, không phân biệt tài khoản.
@@ -39,6 +41,8 @@ Hành trình chính: nhập mô tả → chọn filters → xem lưới thumbnai
 | FR11 | Đăng xuất | Logout thu hồi refresh family hiện tại, gọi lặp an toàn; refresh và access token của family bị từ chối sau revoke |
 | FR12 | Quản trị tài khoản và mật khẩu | Admin tạo/khóa/đổi role; đổi mật khẩu bản thân yêu cầu mật khẩu hiện tại; tăng auth_version và thu hồi mọi refresh family khi role/status/password đổi |
 | FR13 | Tải ảnh | User active tạo download URL/response cho ảnh đã công bố; khách nhận 401; search response không lộ URL ảnh gốc |
+| FR14 | Tìm theo thực thể và quan hệ bằng graph | Liên kết query với entity, traversal có giới hạn trả image_id/version; điều kiện quan hệ bắt buộc phải được kiểm chứng; không trả ảnh cũ/xóa hoặc bỏ điều kiện khi graph lỗi |
+| FR15 | VLM rerank ứng viên | Chấm query với ảnh đúng version trong shortlist sau fusion; chỉ sắp xếp ID hợp lệ; lưu model/prompt/config; lỗi hoặc fallback thể hiện theo API, không gọi VLM lại khi phân trang |
 
 Các filter khác như màu, phong cách, nhãn nội dung chỉ thêm khi có dữ liệu và tiêu chí đánh giá. Không hứa embedding sẽ thực thi chính xác yêu cầu đếm đối tượng hoặc phủ định.
 
@@ -56,6 +60,8 @@ Các filter khác như màu, phong cách, nhãn nội dung chỉ thêm khi có d
 
 ## 5. Ngoài phạm vi MVP
 
+Graph search và VLM rerank thuộc phạm vi hiện tại; OCR/caption hoặc trích quan hệ bằng VLM toàn kho không tự được đưa vào chỉ vì đã có reranker.
+
 Feedback, ACL theo ảnh/collection, tìm bằng ảnh, ảnh + văn bản, crawl web, API nguồn ngoài, cá nhân hóa, fine-tune, hội thoại nhiều lượt, OCR/caption toàn kho và tự động phân loại nội dung chưa nằm trong phạm vi mặc định. Có thể đưa một phần vào nếu benchmark chứng minh cần để đạt yêu cầu đã chốt.
 
 ## 6. Trạng thái giao diện
@@ -71,4 +77,4 @@ Feedback, ACL theo ảnh/collection, tìm bằng ảnh, ảnh + văn bản, craw
 
 ## 7. Điều kiện hoàn thành MVP
 
-FR01–FR06 và FR08–FR13 có bằng chứng kiểm thử; FR07 đã loại khỏi MVP; benchmark đủ hai mốc dữ liệu; mục tiêu semantic, QPS và yêu cầu phục hồi được chốt trước nghiệm thu. Có danh sách hạn chế, runbook, cấu hình versioned, báo cáo chất lượng và kết quả pilot. Không coi tài liệu thiết kế hoặc demo tìm được vài ảnh là nghiệm thu hệ thống.
+FR01–FR06 và FR08–FR15 có bằng chứng kiểm thử; FR07 đã loại khỏi MVP; benchmark đủ hai mốc dữ liệu; mục tiêu semantic, QPS và yêu cầu phục hồi được chốt trước nghiệm thu. Có danh sách hạn chế, runbook, cấu hình versioned, báo cáo chất lượng và kết quả pilot. Không coi tài liệu thiết kế hoặc demo tìm được vài ảnh là nghiệm thu hệ thống.

@@ -14,6 +14,8 @@ Trạng thái: biểu mẫu có hướng dẫn để hoàn thiện với kho ả
 | Pixel size | Chưa đo | Width/height, p95 số pixel, orientation | Validation/inference |
 | Định dạng | Chưa đo | JPEG/PNG/WebP/khác, ảnh động, file hỏng | Decoder và phạm vi hỗ trợ |
 | Metadata | Chưa cung cấp | Độ phủ và độ đúng title/tag/license/mã hàng | Keyword/filters |
+| Thực thể và quan hệ | Chưa kiểm kê | Stable entity IDs/aliases, predicates, nguồn chuẩn, provenance, độ phủ và fan-out; phân biệt dữ liệu xác minh/suy luận | Graph schema/linking, traversal và backfill Q13 |
+| Ảnh cho VLM | Chưa đo | Rendition pixels/bytes, chi tiết cần đọc, quyền gửi ảnh tới hosted model nếu chọn | Rerank quality, I/O, VRAM và Q14 |
 | Ngôn ngữ | Chưa xác nhận | Ngôn ngữ query và metadata | Model/tokenizer |
 | Trùng lặp | Chưa đo | Trùng byte và gần trùng báo riêng | Chất lượng kết quả |
 | Cập nhật/xóa | Chưa cung cấp | Số ảnh/ngày, đỉnh batch, revision nguồn | Incremental sync |
@@ -51,3 +53,5 @@ Trường mới như SKU, địa điểm hoặc tác giả cần người phụ 
 Báo cáo cần có: dataset_revision, ngày khảo sát, sources được bao phủ, phương pháp lấy mẫu, số liệu tổng/mẫu, lỗi dữ liệu, quyền truy cập, hạn chế và đề xuất điều chỉnh pipeline.
 
 Cho phép thử nghiệm nhỏ khi có mẫu hợp lệ và quyền xử lý rõ. Chỉ nhập diện rộng khi nguồn ổn định, revision được định nghĩa, giới hạn ảnh phù hợp và lỗi mẫu đã được phân loại. Các ảnh chưa rõ quyền hoặc không đáp ứng validation phải được tách ra, không tự sửa rồi đánh dấu ready.
+
+Cập nhật C12 ngày 06/11/2026: inventory bổ sung graph facts và ảnh phục vụ VLM rerank. Lấy mẫu truy vấn quan hệ một/nhiều bước với nhãn entity/path, khảo sát alias/trùng tên, shared relations và revision nguồn. Không coi việc có encoder hoặc VLM reranker là đã có graph data; Q13 xác định schema/nguồn trước backfill và Q14 xác định model/hosting/quyền xử lý ảnh.

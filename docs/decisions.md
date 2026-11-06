@@ -1,6 +1,6 @@
 # Quyết định, giả định và câu hỏi còn mở
 
-Trạng thái ngày 05/11/2026. “Đã xác nhận” chỉ dùng cho thông tin người dùng đã cung cấp; ADR chưa chốt là thiết kế để review. ADR03 có quyết định mới của người dùng thay phương án ban đầu.
+Trạng thái ngày 06/11/2026. “Đã xác nhận” chỉ dùng cho thông tin người dùng đã cung cấp; ADR chưa chốt là thiết kế để review. ADR03 có quyết định mới của người dùng thay phương án ban đầu.
 
 ## 1. Quyết định sản phẩm đã xác nhận
 
@@ -17,10 +17,11 @@ Trạng thái ngày 05/11/2026. “Đã xác nhận” chỉ dùng cho thông ti
 | C09 | Khách search/xem danh sách và thumbnail; mở chi tiết/download cần login; user xem/tải toàn kho | Làm rõ của người dùng ngày 05/11/2026 |
 | C10 | Ba vai trò visitor/user/admin; admin quản trị cả kho và tài khoản, user không quản trị | Yêu cầu người dùng ngày 05/11/2026 |
 | C11 | Login dùng access token + refresh token, không dùng session đăng nhập | Yêu cầu người dùng ngày 05/11/2026 |
+| C12 | Bổ sung graph search bên cạnh vector/keyword search và VLM để rerank ứng viên trong phạm vi triển khai hiện tại | Yêu cầu người dùng ngày 06/11/2026 |
 
 ## 2. ADR và trạng thái
 
-ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; PostgreSQL cho DB quan hệ, schema payload, đồng bộ và các ADR khác còn là đề xuất. Chi tiết ở [thiết kế Qdrant](qdrant-design.md).
+ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; PostgreSQL cho DB quan hệ, schema payload và đồng bộ còn là đề xuất. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; engine, checkpoint và cấu hình cụ thể chưa chốt. Chi tiết ở [thiết kế Qdrant](qdrant-design.md).
 
 | ID | Lựa chọn | Phương án thay thế | Lý do và đánh đổi | Điều kiện xem lại |
 | --- | --- | --- | --- | --- |
@@ -36,6 +37,8 @@ ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; PostgreSQL cho DB 
 | ADR10 | Versioned generation và cutover | Ghi đè vector tại chỗ | Rollback/đánh giá tốt hơn; tăng dung lượng và catch-up | Chi phí hoặc downtime chấp nhận được |
 | ADR11 | Transactional outbox, immutable revisioned points, pointer công bố và reconciliation | Ghi kép trực tiếp | Không có transaction SQL/Qdrant; chống retry/stale writes bằng version và final check | Sau kiểm thử consistency và vận hành |
 | ADR12 | Access + refresh token — đã chốt C11; đề xuất JWT access, opaque rotating refresh, registry hash và revocation checks | Opaque login session — thiết kế cũ superseded | Theo yêu cầu người dùng; TTL/transport/signing còn là đề xuất, thêm xử lý refresh/reuse/revocation | Q12 về provisioning/SSO và cấu hình token triển khai |
+| ADR13 | Graph search là nhánh retrieval bổ sung — đã chốt C12; đề xuất graph projection versioned, entity linking và traversal có giới hạn | Chỉ vector/keyword/metadata filters | Tìm quan hệ nhiều bước; thêm chi phí dữ liệu, đồng bộ và vận hành; engine/schema cụ thể chưa chốt | Q13 và benchmark graph |
+| ADR14 | VLM rerank sau fusion — đã chốt C12; đề xuất chấm query–ảnh trên shortlist hữu hạn, output có schema và fallback tường minh | Chỉ dùng thứ hạng fusion | Đánh giá chi tiết thị giác; thêm độ trễ, VRAM và chi phí; model/prompt chưa chốt | Q14/Q15 và benchmark end-to-end |
 
 Mỗi ADR khi chốt cần bổ sung người quyết định, ngày, benchmark liên quan và phạm vi có hiệu lực. Khi thay đổi, giữ lại ADR cũ ở trạng thái superseded, không xóa lý do đã dùng.
 
@@ -47,7 +50,7 @@ Lịch sử ADR03: 04/11/2026 đề xuất PostgreSQL + pgvector để giảm th
 - Nhóm nhỏ và ưu tiên ít thành phần vận hành; chưa có thông tin nhân lực.
 - Ảnh được phép xử lý và lưu; cần kiểm kê nguồn/quyền cụ thể.
 - MVP dùng một collection phân loại cho mỗi image, không có collection grants. Visitor/user/admin đã chốt C10; visitor được biểu diễn bằng trạng thái chưa đăng nhập, tài khoản lưu user/admin. Cặp access/refresh đã chốt C11; JWT access, refresh cookie/TTL và registry là thiết kế đề xuất; phân quyền chức năng/login/logout và access policy đã được người dùng chốt.
-- Chưa cần full web crawl, cá nhân hóa hay LLM trong đường tìm kiếm bắt buộc.
+- Chưa cần full web crawl, cá nhân hóa hoặc LLM để phân tích query. VLM rerank đã thuộc phạm vi C12; cấu hình đầy đủ chạy rerank, baseline không VLM chỉ dùng đối chứng hoặc fallback đã khai báo.
 
 ## 4. Câu hỏi cần chốt
 
@@ -65,6 +68,9 @@ Lịch sử ADR03: 04/11/2026 đề xuất PostgreSQL + pgvector để giảm th
 | Q10 | Nhân lực, stack quen thuộc và deadline? | Toolchain, backlog và lịch | Cam kết kế hoạch thời gian |
 | Q11 | Đã giải quyết: khách search/thumbnail; detail/download cần login, mọi user dùng toàn kho | C09; không phải câu hỏi còn mở | Đã chốt 05/11/2026 |
 | Q12 | Admin cấp tài khoản hay tự đăng ký? Có SSO/quên mật khẩu/email recovery trong MVP không? | Provisioning tài khoản và trải nghiệm khách muốn tải ảnh | Chốt workflow tài khoản |
+| Q13 | Loại thực thể/quan hệ, nguồn chuẩn, độ phủ, quy tắc hợp nhất thực thể và graph engine nào? | Graph schema, chất lượng và consistency | Khóa graph profile và backfill |
+| Q14 | VLM checkpoint/hosting, quyền gửi ảnh, độ phân giải, prompt/output và ngân sách inference nào? | Rerank quality, VRAM, chi phí | Khóa reranker profile |
+| Q15 | Rerank window, deadline, QPS và có cho phép fallback khi graph/VLM lỗi không? | SLO end-to-end và chính sách degraded | Nghiệm thu pipeline mới |
 
 Lịch sử ADR12: thiết kế opaque auth session và auth_sessions ban đầu được superseded bởi C11. Không có session login; bản ghi refresh hash/family phục vụ rotation/revocation. search_sessions vẫn là snapshot phân trang.
 
@@ -83,4 +89,7 @@ Các câu hỏi còn mở trên là đầu vào thiết kế tiếp theo; không
 | Ghi Qdrant thành công nhưng SQL chưa công bố hoặc ngược lại sau restore | Unpublished/missing point, payload hash lệch | Outbox replay, immutable point revision, published pointer, đối soát và restore cách ly |
 | Reindex thiếu dung lượng/catch-up | Backlog không về 0 | Capacity hai generation, watermark, cutover gate |
 | Benchmark có bias | Chất lượng test giảm mạnh khi pilot | Query thật, holdout, pooled labels, giữ cấu hình chạy |
+| Graph sai/thưa hoặc lỗi liên kết thực thể | Query quan hệ sai dù vector đúng | Nguồn chuẩn, provenance, nhãn graph, giới hạn traversal và benchmark ablation |
+| Graph stale hoặc cạnh bị hồi sinh | Image/version mismatch, quan hệ cũ còn trả về | Projection bất biến, published pointer, tombstone, kiểm tra revision và reconcile |
+| VLM chậm hoặc output sai | p95 tăng, thiếu/trùng ID, score ngoài schema | Shortlist hữu hạn, admission limit, validate toàn batch, strict/fallback theo profile |
 | Phụ thuộc API ngoài về sau | Quota/lỗi nguồn làm chậm search | Adapter, timeout, chế độ suy giảm và source provenance |

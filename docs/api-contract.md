@@ -4,6 +4,8 @@ Trạng thái: đặc tả đề xuất v0.1, chưa phải API đã triển khai
 
 Cập nhật 05/11/2026: search metadata đọc từ Qdrant payload; DB quan hệ kiểm tra lifecycle/published point và tài khoản/role theo chức năng. Thiết kế lưu trữ thay đổi không làm đổi public request/response dưới đây.
 
+Cập nhật 06/11/2026: pipeline gồm vector/keyword/graph → fusion → VLM rerank. Client vẫn gửi query/filters; không gửi raw graph query, tên model hoặc credentials. Server chọn profile đã version. Chi tiết ở [graph và reranking](graph-reranking-design.md).
+
 ## 1. Quy ước chung
 
 Search/thumbnail public; detail/download cần access token hợp lệ; admin endpoints cần admin. Login/logout, account và role theo [auth-design.md](auth-design.md). Không có collection grants hoặc ACL theo ảnh. Không tin user_id hoặc role tự khai trong JSON. UUID được biểu diễn bằng chuỗi; timestamp và ID trong ví dụ là minh họa.
@@ -89,15 +91,19 @@ Response 200:
 }
 ```
 
-Title có thể null; không suy diễn caption. Kết quả rỗng hợp lệ: items=[], next_cursor=null và HTTP 200. Không trả total_count vì đây là danh sách xếp hạng hữu hạn, không phải đếm toàn bộ ảnh phù hợp. Thông số model/ranking được lưu server-side để truy vết.
+Title có thể null; không suy diễn caption. Kết quả rỗng hợp lệ: items=[], next_cursor=null và HTTP 200. Không trả total_count vì đây là danh sách xếp hạng hữu hạn, không phải đếm toàn bộ ảnh phù hợp. Thông số encoder, vector/graph generation, graph revision, entity-linker, fusion và VLM model/processor/prompt/failure policy được lưu server-side để truy vết.
+
+Graph query dùng thực thể/quan hệ trích từ query theo taxonomy; không thêm graph query language hoặc endpoint graph công khai. Query không có ý định quan hệ có thể skip graph theo profile mà không degraded. Điều kiện quan hệ bắt buộc luôn phải được kiểm chứng; entity không tồn tại cho kết quả rỗng hợp lệ, entity mơ hồ không giải được trả 422 INVALID_QUERY với details.field=query.
+
+Strict là mặc định. Graph/VLM dependency lỗi trả 503 SEARCH_UNAVAILABLE, deadline trả 504 SEARCH_TIMEOUT; không giả thành items rỗng. Nếu profile cho phép fallback, degraded=true và degradation_reason thuộc GRAPH_UNAVAILABLE, GRAPH_BUDGET_EXCEEDED, RERANK_TIMEOUT, RERANK_INVALID_OUTPUT, RERANK_UNAVAILABLE hoặc MULTIPLE_COMPONENT_FAILURES. Không fallback bỏ hard graph constraint. Bỏ toàn bộ output VLM khi rerank lỗi, dùng fusion order của shortlist đã kiểm chứng. Không thể đọc catalog/Qdrant thì luôn fail. Revision graph đổi trong lúc tìm kiếm được retry hữu hạn trong deadline; hết budget trả 503 SEARCH_UNAVAILABLE. UI hiển thị thông báo ngắn khi degraded, không cần lộ model/hạ tầng.
 
 ## 3. Phân trang: POST /v1/search với cursor
 
 Request tiếp theo chỉ chứa `cursor` và tùy chọn `limit`; không được đồng thời chứa query hoặc filters. Cursor được ký hoặc là token ngẫu nhiên opaque, ràng buộc search_id, hash owner_key từ X-Search-Owner và vị trí; TTL đề xuất 15 phút từ lúc tạo phiên. Client coi cursor là opaque, không tự giải mã/sửa.
 
-Server lưu tối đa 200 ID/version đã xếp hạng mỗi phiên làm cửa sổ kết quả ban đầu. Mỗi trang kiểm tra lại trạng thái/published point, bỏ item bị xóa, chưa công bố hoặc đổi version, tiến tiếp trong snapshot để lấp trang. Không đưa ảnh mới vào snapshot. next_cursor=null khi hết cửa sổ, kể cả kho vẫn còn ảnh; UI chỉ nói đã hết kết quả của lượt tìm này.
+Server lưu tối đa 200 ID/version/point_id đã xếp hạng mỗi phiên làm cửa sổ kết quả ban đầu. Với VLM, chỉ lưu shortlist đã rerank: ví dụ rerank_window=50 thì snapshot tối đa 50 dù trần API là 200; không nối tail chưa được chấm. Window cấu hình ít nhất bằng limit request; ít ứng viên hợp lệ hơn thì trả số có được. Không gọi lại VLM hoặc chạy lại retrieval khi đọc cursor. Snapshot giữ degraded/degradation_reason từ lúc tạo cho mọi trang. Mỗi trang kiểm tra lại trạng thái/published point, bỏ item bị xóa, chưa công bố hoặc đổi version, tiến tiếp trong snapshot để lấp trang. Không đưa ảnh mới vào snapshot. next_cursor=null khi hết cửa sổ, kể cả kho vẫn còn ảnh; UI chỉ nói đã hết kết quả của lượt tìm này.
 
-Cùng cursor và limit trả cùng vị trí logic, nhưng response có thể ít item hơn khi dữ liệu thay đổi. Thumbnail URL được cấp mới theo request. Trang nối tiếp không lặp ID trong một chuỗi cursor. Cursor khác owner_key hoặc bị sửa trả 400 INVALID_CURSOR; snapshot hết hạn trả 410. TTL và cửa sổ được benchmark để cân bằng chi phí lưu snapshot. X-Search-Owner là giá trị ngẫu nhiên tối thiểu 128 bit client giữ trong memory và gửi trên request tạo/đọc snapshot; server lưu hash, không dùng làm filter ảnh. Thiếu/không đúng định dạng key trả 400 INVALID_SEARCH_OWNER; key không khớp cursor trả INVALID_CURSOR. Không có cookie/session đăng nhập cho search; khi login/logout bắt đầu snapshot mới, refresh access token không đổi owner key.
+Cùng cursor và limit trả cùng vị trí logic, nhưng response có thể ít item hơn khi dữ liệu thay đổi. Thumbnail URL được cấp mới theo request. Trang nối tiếp không lặp ID trong một chuỗi cursor. Cursor khác owner_key hoặc bị sửa trả 400 INVALID_CURSOR; snapshot hết hạn trả 410. Nếu query có hard graph constraint và published graph_revision đổi, trả 410 SEARCH_EXPIRED và yêu cầu tìm lại; không tiếp tục trả ảnh dựa trên quan hệ cũ. Query chỉ dùng graph để boost giữ thứ tự snapshot, vẫn kiểm tra catalog/pointers. TTL và cửa sổ được benchmark để cân bằng chi phí lưu snapshot. X-Search-Owner là giá trị ngẫu nhiên tối thiểu 128 bit client giữ trong memory và gửi trên request tạo/đọc snapshot; server lưu hash, không dùng làm filter ảnh. Thiếu/không đúng định dạng key trả 400 INVALID_SEARCH_OWNER; key không khớp cursor trả INVALID_CURSOR. Không có cookie/session đăng nhập cho search; khi login/logout bắt đầu snapshot mới, refresh access token không đổi owner key.
 
 ## 4. GET /v1/images/{image_id}
 
@@ -137,7 +143,7 @@ Tombstone có hiệu lực với response mới sau commit; response hoặc URL 
 
 ## 10. GET /v1/admin/images/{image_id}
 
-Cần admin. Trả trạng thái cả ảnh active và deleted: image_id, collection_id, lifecycle, current_version, desired_version, metadata_revision, processing_status, purge_status, updated_at, request_id; header ETag chứa metadata_revision dạng quoted string. Không đủ role trả 403; chưa login trả 401.
+Cần admin. Trả trạng thái cả ảnh active và deleted: image_id, collection_id, lifecycle, current_version, desired_version, metadata_revision, processing_status, vector_projection_status, graph_projection_status, purge_status, updated_at, request_id; header ETag chứa metadata_revision dạng quoted string. Không đủ role trả 403; chưa login trả 401.
 
 ## 11. Tài khoản và xác thực
 
@@ -184,6 +190,6 @@ Import/retry/delete và mọi API quản trị cần bearer access + role admin;
 
 ## 12. Health và versioning
 
-`GET /health/live`: kiểm tra process còn hoạt động, không chạm dependency; `GET /health/ready`: 200 khi instance phục vụ được, 503 nếu model, Qdrant collection/profile hoặc DB quan hệ chưa sẵn sàng. Health được giới hạn ở hạ tầng vận hành, không công khai topology hay credential.
+`GET /health/live`: kiểm tra process còn hoạt động, không chạm dependency; `GET /health/ready`: 200 khi instance phục vụ được, 503 nếu encoder, Qdrant collection/profile, DB quan hệ, graph generation/revision hoặc VLM bắt buộc theo active profile chưa sẵn sàng. Readiness kiểm tra model/config đã nạp và dependency bằng probe nhẹ, không chạy full VLM rerank trên mỗi health request. Chỉ coi fallback là ready nếu profile cho phép và vẫn kiểm chứng được hard constraints. Health được giới hạn ở hạ tầng vận hành, không công khai topology hay credential.
 
 Thêm field response tùy chọn được coi là tương thích; đổi nghĩa, xóa field hoặc làm request cũ mất hợp lệ cần version mới. Khi bắt đầu code, chuyển hợp đồng này thành OpenAPI và kiểm tra ví dụ bằng schema; hiện chưa có endpoint nào chạy.

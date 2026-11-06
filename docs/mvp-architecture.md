@@ -4,6 +4,8 @@ Ngày phân tích: 04/11/2026. Trạng thái: đề xuất, chưa chốt triển
 
 Cập nhật 05/11/2026: đã chọn Qdrant lưu vector và search metadata, tách khỏi DB quan hệ; không dùng pgvector. Công nghệ DB quan hệ và cấu hình triển khai vẫn là đề xuất.
 
+Cập nhật 06/11/2026: phạm vi gồm vector search + keyword search + graph search, hợp nhất ứng viên rồi VLM rerank. Xem [sơ đồ phân cấp và thiết kế graph/rerank](graph-reranking-design.md); graph engine và checkpoint VLM chưa chốt.
+
 Cập nhật truy cập: không feedback và không ACL theo ảnh/collection; khách search/thumbnail, detail/download cần login. Xem [thiết kế tài khoản](auth-design.md).
 
 Đây là phân tích tổng quan. Thiết kế chi tiết và quy tắc nguồn chuẩn của từng phần được tập hợp tại [mục lục tài liệu](README.md).
@@ -39,7 +41,7 @@ Khuyến nghị khởi đầu bằng một ứng dụng backend chia module và 
 - Login/refresh/logout bằng access/refresh token, role user/admin; khách tìm/xem thumbnail, detail/download cần login. Không có feedback trong MVP.
 - Trạng thái rõ ràng khi truy vấn sai, không có kết quả đủ phù hợp hoặc dịch vụ gặp lỗi.
 
-Để sau MVP: tìm bằng ảnh, kết hợp ảnh và văn bản, cá nhân hóa, fine-tune, crawl web diện rộng, hội thoại nhiều lượt và reranker tốn tài nguyên.
+Graph retrieval và VLM rerank được đưa vào MVP theo C12, với shortlist và deadline cần benchmark. Để sau MVP: tìm bằng ảnh, kết hợp ảnh và văn bản, cá nhân hóa, fine-tune, crawl web diện rộng và hội thoại nhiều lượt.
 
 Mục tiêu độ trễ đề xuất để đo thử: p95 dưới 2 giây cho API tìm kiếm đã warm, chưa gồm thời gian tải ảnh ở trình duyệt. Phải ghi rõ cấu hình máy, số ảnh, số người dùng đồng thời và QPS khi nghiệm thu. Đây là mục tiêu ban đầu, chưa phải cam kết hiệu năng.
 
@@ -49,11 +51,15 @@ Ngưỡng chất lượng cần được chốt sau khi có baseline trên dữ 
 
 Văn bản và ảnh cần được mã hóa bởi hai nhánh tương thích của cùng một mô hình đa phương thức để có thể so sánh trong cùng không gian vector. Tài liệu [Sentence Transformers về image search](https://www.sbert.net/examples/sentence_transformer/applications/image-search/README.html) minh họa cả tìm bằng văn bản và tìm ảnh tương tự theo cách này.
 
-Phân biệt ba nguồn tín hiệu:
+Phân biệt bốn nguồn tín hiệu:
 
 1. Embedding trực tiếp từ ảnh: phục vụ nội dung thị giác và tạo nền cho image-to-image.
 2. Tiêu đề, tag, OCR, caption: giúp tìm tên riêng, mã sản phẩm hoặc chữ xuất hiện trong ảnh.
 3. Metadata có cấu trúc: áp dụng ràng buộc chính xác như ảnh ngang, bộ sưu tập và kích thước; không ACL theo ảnh/collection.
+
+4. Graph thực thể/quan hệ: tìm ảnh theo các liên kết có provenance như sản phẩm → thương hiệu → chiến dịch; dùng làm nhánh ứng viên hoặc kiểm chứng điều kiện bắt buộc.
+
+VLM rerank chấm query với ảnh trong shortlist sau hợp nhất bốn nguồn tín hiệu trên; không thay encoder hay quét toàn kho. Graph được dựng từ nguồn chuẩn, không tự có từ CLIP/SigLIP 2.
 
 Không chỉ tạo caption rồi tìm trên caption: chi tiết bị bỏ sót khi mô tả sẽ khó được tìm lại. Caption và OCR có thể bổ sung sau khi phân tích lỗi chỉ ra nhu cầu.
 
@@ -62,22 +68,31 @@ Ví dụ: “giày đỏ mã AB123” cần cả tín hiệu hình ảnh và mã
 ## 4. Kiến trúc đề xuất cho kho ảnh riêng
 
 ```mermaid
-flowchart LR
-    U[Người dùng] --> UI[Web UI]
-    UI --> API[Search API]
+flowchart TD
+    U[Web UI] --> API[Search API và query planner]
     API --> TE[Text encoder]
-    TE --> QD[(Qdrant: vector và payload)]
-    API --> DB[(DB quan hệ: catalog và quyền)]
-    QD --> R[Hợp nhất và xếp hạng]
-    R --> API
-    API --> UI
-    UI --> STORE[(Object storage: ảnh và thumbnail)]
-    ADMIN[Nhập ảnh theo batch] --> JOB[(Bảng tác vụ)]
-    JOB --> W[Worker]
-    W --> IE[Image encoder]
-    IE --> QD
+    TE --> V[Vector retriever]
+    API --> K[Keyword retriever]
+    V --> QD[(Qdrant)]
+    K --> QD
+    API --> G[Graph retriever]
+    G --> GRAPH[(Entity và relation projection)]
+    V --> F[Fusion và dedup]
+    K --> F
+    G --> F
+    F --> CHECK[Catalog, filters và hard relation check]
+    CHECK --> VLM[VLM rerank shortlist]
+    VLM --> FINAL[Final check và snapshot]
+    FINAL --> U
+    CHECK --> DB[(DB quan hệ)]
+    FINAL --> DB
+    VLM --> STORE[(Object storage: ảnh đúng version)]
+    ADMIN[Admin import] --> W[Worker: thumbnail, embedding, graph artifacts]
     W --> STORE
     W --> DB
+    DB --> SYNC[Outbox và projection workers]
+    SYNC --> QD
+    SYNC --> GRAPH
 ```
 
 Các khối là trách nhiệm logic, không bắt buộc mỗi khối là một dịch vụ. API và worker có thể dùng chung codebase, chạy thành hai process. Encoder có thể được nạp trong process; chỉ tách thành dịch vụ inference khi cần chia sẻ GPU hoặc scale độc lập.
@@ -86,6 +101,8 @@ Các khối là trách nhiệm logic, không bắt buộc mỗi khối là một
 | --- | --- | --- |
 | Backend và worker | Python; FastAPI là một ứng viên | Thuận tiện tích hợp xử lý ảnh và mô hình |
 | Vector và search metadata | Qdrant, đã chọn | Vector và payload filters cùng hệ tìm kiếm |
+| Graph retrieval | Graph storage adapter và entity linker có version; engine chưa chốt | Traversal quan hệ có provenance và image/version pointers |
+| VLM reranker | Checkpoint/hosting chưa chốt; inference trên shortlist | Đánh giá query với ảnh sau fusion, cần đo chất lượng/latency/chi phí |
 | Dữ liệu nghiệp vụ | DB quan hệ; PostgreSQL là ứng viên | Danh tính, quyền, lifecycle, jobs/outbox, refresh token registry, search snapshots và audit |
 | Ảnh gốc và thumbnail | Object storage tương thích S3 | Tách ảnh khỏi cơ sở dữ liệu truy vấn |
 | Xử lý nền | Bảng jobs trong PostgreSQL, claim theo batch | Theo dõi tiến độ và phục hồi; chỉ thêm queue riêng khi đo được nhu cầu |
@@ -101,7 +118,7 @@ Qdrant lưu vector và payload metadata để tìm/lọc/hiển thị ảnh; HNS
 2. Lưu ảnh gốc, tạo thumbnail, tính checksum và lấy width/height.
 3. Tạo tác vụ với khóa chống xử lý lặp theo ảnh, phiên bản nội dung và phiên bản pipeline.
 4. Worker chạy đúng processor của model, mã hóa ảnh và chuẩn hóa vector nếu cấu hình similarity yêu cầu.
-5. Ghi intent/outbox, upsert vector/payload Qdrant và xác minh, rồi công bố pointer/version có điều kiện trong DB quan hệ. Chỉ ảnh đã công bố, còn hiệu lực và được phép xem mới vào kết quả.
+5. Dựng graph artifact từ metadata/thực thể/quan hệ nguồn chuẩn; ghi intents/outbox cho vector và graph. Upsert/xác minh cả hai projection rồi công bố pointers/version có điều kiện cùng transaction trong DB quan hệ; graph rỗng hợp lệ vẫn có artifact ready. Chỉ ảnh đã công bố, còn hiệu lực và được phép xem mới vào kết quả.
 6. Retry có giới hạn với lỗi tạm thời; lỗi vĩnh viễn được lưu để quản trị xử lý.
 
 Checksum xử lý trùng byte; ảnh resize hoặc crop cần kiểm tra gần trùng riêng nếu chúng làm giảm chất lượng kết quả. Không tự động xóa mọi ảnh gần giống.
@@ -110,20 +127,20 @@ Worker cần claim job an toàn khi chạy đồng thời, có lease/timeout đ�
 
 ## 6. Luồng tìm kiếm và xếp hạng
 
-1. API xác thực người dùng và phạm vi được truy cập; kiểm tra truy vấn và filters.
+1. API search public kiểm tra query/filters/owner key và chụp cấu hình encoder, graph, fusion, VLM; không giới hạn tập ảnh theo tài khoản.
 2. Giữ truy vấn gốc, chuẩn hóa Unicode và khoảng trắng mà không xóa tùy tiện dấu tiếng Việt.
 3. Text encoder tạo vector với model tương thích với chỉ mục ảnh.
-4. Lấy ứng viên bằng vector, áp dụng phạm vi truy cập và bộ lọc trong truy vấn. Nếu có metadata văn bản hữu ích, chạy thêm nhánh từ khóa.
-5. Hợp nhất hai danh sách bằng RRF làm baseline; không cộng trực tiếp các score khác thang đo. Search không lọc theo tài khoản. Detail/download kiểm tra login; mọi user active dùng cùng toàn kho.
-6. Giảm kết quả trùng lặp, trả thumbnail và metadata; log thời gian từng bước cùng phiên bản cấu hình.
+4. Lấy ứng viên vector/keyword từ Qdrant, graph từ entity linking và traversal theo query intent; áp dụng filters và kiểm chứng hard relation constraints.
+5. Hợp nhất các nhánh bằng weighted RRF, hydrate đúng published point, dedup và kiểm tra catalog/version; không cộng trực tiếp score khác thang đo.
+6. Chọn shortlist hữu hạn cho VLM chấm query–ảnh, validate output và xếp lại. Final-check lifecycle/pointers/graph revision, tạo snapshot rồi trả thumbnail/metadata. Phân trang không rerank lại. Detail/download kiểm tra login; mọi user active dùng cùng toàn kho.
 
-Ví dụ cấu hình để thử nghiệm: lấy 200 ứng viên mỗi nhánh, tạo snapshot tối đa 200 kết quả, mặc định trả 20 kết quả mỗi trang. Cần benchmark để điều chỉnh; hợp đồng chi tiết ở [API](api-contract.md), đây không phải thông số tối ưu đã được chứng minh.
+Ví dụ cấu hình thử nghiệm: lấy 200 ứng viên mỗi nhánh, fusion/kiểm chứng giữ tối đa 200 rồi VLM rerank tối đa 50, snapshot chỉ giữ nhóm đã rerank (tối đa 50), mặc định 20 kết quả/trang. Trần snapshot API vẫn là 200; rerank window ít nhất bằng limit, không nối tail chưa chấm. Cần benchmark để điều chỉnh; hợp đồng chi tiết ở [API](api-contract.md), đây không phải thông số tối ưu đã được chứng minh.
 
 [Qdrant Query API](https://qdrant.tech/documentation/hybrid-queries/) là tài liệu tham khảo cho fusion và tìm nhiều giai đoạn. Cần kiểm thử tokenization tiếng Việt và mã hàng khi thêm nhánh keyword; full-text filtering không tự thay thế lexical ranking. Search metadata được lưu ở Qdrant, không lập bản sao metadata trong SQL chỉ để phục vụ tìm kiếm.
 
 Cosine similarity không phải xác suất phù hợp. Khi dữ liệu không có ảnh đúng, nearest-neighbor vẫn trả ảnh gần nhất; cần hiệu chỉnh ngưỡng theo tập đánh giá hoặc thể hiện rõ mức phù hợp hạn chế. Không đặt một ngưỡng chung rồi dùng cho mọi model.
 
-Không bắt buộc gọi LLM ở mỗi truy vấn. Trước tiên dùng embedding và filters rõ ràng trên UI. Chỉ thêm phân tích truy vấn bằng LLM nếu đo được lợi ích về chất lượng lớn hơn chi phí và độ trễ phát sinh.
+VLM rerank nằm trong cấu hình đầy đủ. LLM để phân tích query vẫn là tùy chọn riêng, không bắt buộc vì đã dùng VLM reranker; entity linker có thể bắt đầu bằng dictionary/taxonomy và traversal templates. Graph/VLM lỗi dùng strict mặc định hoặc fallback đã khai báo, báo degraded; hard relation constraints không được bỏ. Mục tiêu p95 phải đo trên toàn pipeline, gồm VLM.
 
 ## 7. Chọn model và hỗ trợ tiếng Việt
 
@@ -143,6 +160,8 @@ Khóa checkpoint/revision, processor, số chiều, normalization và distance m
 | images và image_versions trong DB quan hệ | id, collection_id phân loại, source identity, object/snapshot references, content_version, lifecycle, deleted_at; search metadata ở Qdrant |
 | Qdrant points | point_id, vector, payload image_id/content_version/collection_id/title/tags/kích thước/source/license; caption/ocr_text nếu có |
 | search_projections và published_projections trong DB quan hệ | image_id, content_version, generation_id, projection_revision, point_id, hash, trạng thái; không chứa vector/search payload |
+| Graph projection và registry | Entity/aliases, relations có nguồn/revision trong graph adapter; catalog giữ intents/published pointers và graph_revision; artifacts trong object storage |
+| retrieval_profiles | Encoder, keyword/graph/fusion config, VLM model/processor/prompt/schema revision, rerank window, failure policy |
 | ingestion_jobs | id, image_id, pipeline_version, status, attempt_count, lease_until, last_error |
 | search_events | request_id, query theo chính sách lưu dữ liệu, filters, model_revision, ranking_version, result_ids, latency |
 | users, refresh_token_families và refresh_tokens | email/password_hash/role/status/auth_version; refresh hash/family/expiry/consumed/revoked; không có auth_sessions hoặc feedback |
@@ -181,7 +200,7 @@ Khi triển khai, test tự động bằng fixtures và external-call mocks cho 
 
 ## 10. Vận hành và chi phí
 
-Theo dõi riêng độ trễ encode, truy vấn database và lấy metadata; đo backlog, job failures, tỷ lệ lỗi và chất lượng mẫu sau mỗi lần đổi cấu hình. Khi thêm cache, khóa cache tìm kiếm bao gồm query, filters và phiên bản index/model, không có user scope. Không cache chung response detail/download chứa URL đã cấp sau login.
+Theo dõi riêng encode, keyword/graph retrieval, fusion/hydration, image fetch, VLM và final check; đo backlog, job failures, tỷ lệ lỗi và chất lượng mẫu sau mỗi lần đổi cấu hình. Khi thêm cache, khóa cache tìm kiếm bao gồm query, filters và phiên bản vector/graph generation, graph revision, linker/fusion và VLM model/processor/prompt, không có user scope. Không cache chung response detail/download chứa URL đã cấp sau login.
 
 Ước lượng bộ nhớ vector thô: N × d × bytes mỗi phần tử. Với 768 chiều, float32, một vector mỗi ảnh: 100.000 ảnh cần khoảng 293 MiB; 1.000.000 ảnh cần khoảng 2,86 GiB. Chưa gồm HNSW, metadata, model, database overhead, bản sao và nhiều phiên bản vector; không dùng con số này làm tổng RAM triển khai. Chi tiết các giả định về dung lượng ảnh và thời gian nhập nằm trong [kế hoạch quy mô](scale-plan.md).
 
@@ -200,10 +219,10 @@ Với ảnh + văn bản, đánh giá chiến lược fusion hoặc model chuyê
 ## 12. Lộ trình theo đầu ra
 
 1. Giữ phạm vi kho riêng 100.000–1.000.000 ảnh; chốt người dùng, lĩnh vực, quyền sử dụng, QPS và ví dụ truy vấn; hoàn thành PRD ngắn cùng data inventory.
-2. Làm thử nghiệm retrieval trên dữ liệu đại diện; so sánh model, tiếng Việt, vector-only và metadata-only; xác lập baseline chất lượng và hiệu năng.
+2. Thử nghiệm encoder/tiếng Việt, vector-only, keyword-only, hybrid, graph và VLM ablations cùng cấu hình đầy đủ; xác lập baseline chất lượng, latency và chi phí.
 3. Chốt architecture decision records cho model, storage, database, ingestion và tiêu chí nghiệm thu.
 4. Xây MVP có import, UI/API tìm kiếm, filters, login/logout, detail/download và xử lý lỗi; triển khai thử với nhóm nhỏ.
-5. Phân tích truy vấn thất bại; chỉ thêm hybrid, OCR/caption hoặc reranking khi dữ liệu đánh giá cho thấy cần thiết.
+5. Hoàn thiện graph retrieval, dual projection consistency, fusion và VLM rerank trong MVP; phân tích lỗi để điều chỉnh. OCR/caption, VLM graph extraction hoặc fine-tuning cần bằng chứng và phạm vi riêng.
 6. Mở rộng tìm bằng ảnh sau khi chất lượng và vận hành text-to-image đạt tiêu chí đã thống nhất.
 
 Chưa ấn định số tuần khi chưa biết nhân lực và tình trạng dữ liệu. Mỗi bước nên có đầu ra review được và điều kiện chuyển bước.

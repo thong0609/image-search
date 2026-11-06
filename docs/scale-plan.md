@@ -4,9 +4,11 @@ Trạng thái: cập nhật ngày 05/11/2026. Kho riêng 100k–1M ảnh và Qdr
 
 Truy cập đã chốt: khách search và xem thumbnail; detail/download cần login; mọi user tìm/xem cùng toàn kho. Không có feedback trong MVP.
 
+Cập nhật 06/11/2026: bổ sung graph search và VLM rerank vào phạm vi hiện tại (C12). Sizing và benchmark phải bao gồm hai thành phần; số liệu minh họa vector bên dưới không đại diện cho tổng hệ thống.
+
 ## 1. Phạm vi đã chốt
 
-- MVP: tìm bằng văn bản trên kho ảnh riêng, 100.000–1.000.000 ảnh.
+- MVP: tìm bằng văn bản trên kho ảnh riêng, 100.000–1.000.000 ảnh; vector + keyword + graph retrieval, fusion và VLM rerank.
 - Mở rộng: tìm bằng ảnh và tích hợp nguồn ảnh bên ngoài.
 - Chưa chốt: lĩnh vực ảnh, metadata, ngôn ngữ truy vấn, tải truy vấn, ngân sách, tốc độ cập nhật và yêu cầu sẵn sàng.
 
@@ -18,7 +20,7 @@ Qdrant là vector database đã chọn và lưu cả payload metadata tìm kiế
 
 Benchmark tập trung chọn Qdrant topology, HNSW/search effort, payload indexes, RAM/disk và concurrency; không so sánh để quay lại pgvector. [Tài liệu Qdrant indexing](https://qdrant.tech/documentation/manage-data/indexing/) mô tả vector index và payload index cho bộ lọc.
 
-DB quan hệ ghi intent/outbox trong cùng transaction; worker upsert Qdrant với point revision bất biến rồi công bố pointer có điều kiện sau khi xác minh ghi/đọc. Search phải kiểm tra lifecycle/version/pointer từ DB quan hệ trước trả kết quả. Theo dõi sync lag, xử lý retry và reconciliation vì không có transaction xuyên hai hệ.
+DB quan hệ ghi intent/outbox trong cùng transaction; worker upsert Qdrant và graph projections bất biến, xác minh ghi/đọc cả hai rồi công bố pointers/version có điều kiện theo [graph consistency](graph-reranking-design.md). Search phải kiểm tra lifecycle/version/pointer từ DB quan hệ trước trả kết quả. Theo dõi sync lag, xử lý retry và reconciliation vì không có transaction xuyên các store.
 
 HNSW là ứng viên cho truy vấn online. Exact search dùng để tạo baseline ANN recall trên một tập truy vấn có kiểm soát; không bắt buộc chạy exact cho mọi request. Chưa bật quantization hoặc chia shard trước khi benchmark chỉ ra lợi ích cần thiết.
 
@@ -38,7 +40,7 @@ Chưa tính index, metadata, WAL, backup, replica, model, cache, khoảng trốn
 
 ## 4. Nhập dữ liệu lần đầu và cập nhật
 
-Pipeline: đọc nguồn → kiểm tra ảnh → checksum/metadata/thumbnail → batch image embedding → batch upsert → xác nhận ready.
+Pipeline: đọc nguồn → kiểm tra ảnh → checksum/metadata/thumbnail → batch image embedding và graph artifacts → upsert Qdrant/graph → xác minh cả hai → công bố pointers/version. Online VLM rerank có ngân sách tài nguyên riêng; không mặc định chạy caption/extraction toàn kho.
 
 - Lưu manifest nhập với image_id, nguồn, content_version và trạng thái từng ảnh. Có thể tiếp tục từ checkpoint sau khi dừng.
 - Dùng batch có giới hạn; không nạp một triệu file hoặc vector vào RAM cùng lúc.
@@ -55,7 +57,7 @@ Chạy hai mốc dữ liệu 100.000 và 1.000.000 ảnh thật đại diện. C
 
 Ma trận tải đề xuất để khám phá: 1, 5 và 20 QPS; thay bằng tải mục tiêu khi có thông tin. Đây không phải yêu cầu người dùng đã xác nhận. Chạy cả truy vấn không lọc và có lọc, trường hợp tập hợp thỏa bộ lọc khoảng 50%, 10% và 1%, cùng kịch bản search public, detail/download đã login. Collection là filter tùy chọn, không là quyền.
 
-Đo p50/p95/p99, lỗi, ANN Recall@K so với exact trên cùng phạm vi lọc, CPU/RAM/disk I/O, chi phí và thời gian build/rebuild index. Đo thêm khi import đang chạy, khi cache lạnh và khi sau restart. Công bố kết quả warm/cold riêng.
+Đo p50/p95/p99, lỗi, ANN Recall@K so với exact trên cùng phạm vi lọc, CPU/RAM/disk I/O, chi phí và thời gian build/rebuild index. Đo thêm entity linking/traversal, graph membership/revision checks, fusion/hydration/image fetch, VLM queue/inference và cost/query. So sánh ablations với cấu hình đầy đủ; p95 bao gồm mọi bước. Đo khi import đang chạy, khi cache lạnh và sau restart. Công bố kết quả warm/cold riêng.
 
 Mục tiêu thử ban đầu: p95 API warm < 2 giây; ANN Recall@100 ≥ 95% so với exact. Đây là mục tiêu đề xuất để thảo luận, không phải kết quả đo hay thay thế đánh giá độ liên quan ngữ nghĩa. Chốt QPS, phần cứng, filters và tập truy vấn đi kèm trước nghiệm thu.
 
@@ -79,3 +81,11 @@ Sau MVP có hai cách tích hợp:
 2. Gọi API nhà cung cấp lúc tìm kiếm: tạo nhánh retrieval riêng, đặt timeout/quota, xử lý thiếu một nguồn và hợp nhất kết quả.
 
 Score từ các nguồn thường khác thang đo; dùng fusion theo thứ hạng làm baseline rồi đánh giá trên tập truy vấn có nhãn. Giữ nguồn gốc trong kết quả, có khóa định danh kèm namespace nguồn và xử lý ảnh trùng giữa các nguồn. Việc tìm bằng ảnh chỉ áp dụng cho nguồn có khả năng hoặc quyền xử lý phù hợp.
+
+## 8. Capacity graph và VLM
+
+Graph sizing dựa trên số unique entities E, relations R, aliases, graph image projections N và phân bố fan-out; không suy ra E/R chỉ từ số ảnh. Đo storage/index và traversal p95 ở các mức hop/fan-out thực tế. Tính staging/version cũ, shared-fact artifacts, backup và hai graph generations khi backfill. Graph engine chưa chốt; chọn adapter sau khi kiểm chứng Q13 và consistency contract.
+
+VLM sizing dựa trên checkpoint, precision, rendition pixels, ảnh/query, batch, concurrent requests và throughput thực đo. Với rerank_window=50, tải inference đầu vào xấp xỉ QPS × min(50, số ứng viên hợp lệ) cặp query–ảnh/giây trước retries; đây là workload cần đo, không phải công suất GPU đã xác nhận. Tính image-fetch I/O/egress, VRAM, model runtime, cost/query và backpressure riêng với batch embedding. Profile/hosting/model chưa chốt Q14/Q15.
+
+Mục tiêu p95 warm < 2 giây và deadline thử dưới 5 giây cần đo lại với cấu hình đầy đủ; không hứa giữ nguyên latency bằng cách ẩn thời gian VLM. Nếu chưa đạt, điều chỉnh window/rendition/model/hardware hoặc chốt lại SLO theo benchmark, giữ graph và VLM trong phạm vi C12. Restore/cutover bao gồm graph pointers/shared relations; thay riêng VLM/prompt chỉ đổi search profile tương thích, không rebuild embedding.

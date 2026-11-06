@@ -2,6 +2,8 @@
 
 Định hướng hệ thống tìm ảnh theo yêu cầu bằng văn bản ở MVP, dùng kho ảnh riêng với quy mô 100.000–1.000.000 ảnh. Sau MVP có thể mở rộng tìm bằng ảnh và tích hợp nguồn ảnh bên ngoài.
 
+Kiến trúc tìm kiếm cập nhật 06/11/2026: **vector search + keyword search + graph search → hợp nhất ứng viên → VLM rerank → snapshot kết quả**. CLIP/SigLIP 2 là ứng viên encoder; checkpoint VLM, graph engine và cấu hình xếp hạng chưa chốt. Xem [thiết kế graph search và VLM reranking](docs/graph-reranking-design.md) với sơ đồ phân cấp và luồng dữ liệu.
+
 Repository hiện ở giai đoạn phân tích, chưa có ứng dụng hoặc toolchain. Chưa có lệnh cài đặt, chạy, build, lint hay test được cấu hình.
 
 Lựa chọn dữ liệu đã chốt: **Qdrant lưu vector và metadata phục vụ tìm kiếm**, tách khỏi **DB quan hệ lưu nghiệp vụ và quyền**. PostgreSQL là đề xuất cho DB quan hệ; không dùng pgvector. Ảnh và metadata snapshots phục vụ phục hồi nằm trong object storage.
@@ -17,4 +19,4 @@ Truy cập: **khách được tìm kiếm và xem danh sách/thumbnail; mở chi
 - [Thiết kế tài khoản và phân quyền chức năng](docs/auth-design.md).
 - `AGENTS.md`: quy ước làm việc trong repository.
 
-Nguồn ảnh riêng, khoảng quy mô và lựa chọn Qdrant đã được xác nhận. Engine DB quan hệ và các công nghệ/cấu hình khác vẫn là đề xuất; lĩnh vực ảnh, tải truy vấn, ngân sách và yêu cầu nghiệp vụ cần được xác nhận trước khi chốt triển khai.
+Nguồn ảnh riêng, khoảng quy mô và lựa chọn Qdrant đã được xác nhận. Việc bổ sung graph search và VLM rerank đã được xác nhận; engine DB quan hệ, graph engine và các công nghệ/cấu hình cụ thể vẫn là đề xuất; lĩnh vực ảnh, tải truy vấn, ngân sách và yêu cầu nghiệp vụ cần được xác nhận trước khi chốt triển khai.

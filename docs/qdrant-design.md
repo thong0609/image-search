@@ -10,9 +10,12 @@ Thiết kế truy cập cập nhật: không ACL theo ảnh/collection, không f
 | --- | --- | --- |
 | Qdrant | Image vector; payload title, tags, kích thước, hướng ảnh, source, license, version và các trường tìm/lọc | Nguồn phục vụ vector search và search metadata |
 | DB quan hệ | Identity ảnh, object references, phiên bản, tombstone, users/roles/refresh token registry, imports/jobs, outbox, published point pointers, search sessions, audit | Nguồn chuẩn cho vòng đời, xác thực/phân quyền chức năng và quy trình nghiệp vụ |
+| Graph storage adapter | Entity/aliases, relations có provenance, image_id/content_version/projection_revision và shared fact revisions | Nhánh graph search; engine chưa chốt, không thay Qdrant hoặc catalog |
 | Object storage | Ảnh gốc, thumbnail, metadata snapshot bất biến, manifest và embedding artifact khi cần replay | Dữ liệu media và đầu vào tái dựng projection |
 
 Không tạo bảng embedding hoặc bản sao đầy đủ search metadata trong SQL. Metadata snapshot trong object storage phục vụ rebuild/audit, không phải đường đọc metadata cho search. Các ID/version tồn tại ở hai hệ để liên kết và kiểm chứng, không có foreign key xuyên hệ.
+
+Cập nhật 06/11/2026: graph search và VLM rerank thuộc phạm vi. [Thiết kế graph/rerank](graph-reranking-design.md) bổ sung đồng bộ hai projection và công bố chung; quy tắc point dưới đây tiếp tục áp dụng cho nhánh Qdrant.
 
 Khi tìm kiếm, API lấy vector neighbors và payload từ Qdrant; DB quan hệ batch-check trạng thái và pointer đã công bố, không lọc theo người dùng. Detail đọc payload từ đúng point hiện tại sau kiểm tra access token hợp lệ và trạng thái thu hồi và catalog; search/thumbnail public, detail/download cần login. Nếu Qdrant lỗi, không giả định SQL có đủ metadata để thay thế.
 
@@ -67,7 +70,7 @@ Qdrant hỗ trợ payload và indexes theo trường; exact match chuỗi và t�
 | tags | keyword nếu có filter tag | Khớp tag chuẩn hóa |
 | title/caption/ocr_text | text khi thực sự dùng nhánh văn bản | Cần đánh giá tokenizer tiếng Việt |
 
-Không index mọi payload field mặc định. Full-text filter không tự đồng nghĩa với lexical ranking/BM25; nếu bật nhánh từ khóa phải đặc tả cách sinh score, phiên bản Qdrant và cấu hình fusion trong retrieval profile rồi benchmark riêng.
+Không index mọi payload field mặc định. Full-text filter không tự đồng nghĩa với lexical ranking/BM25; nhánh từ khóa phải đặc tả cách sinh score, phiên bản Qdrant và cấu hình fusion trong retrieval profile rồi benchmark riêng.
 
 API chọn generation/profile, tìm toàn kho và chỉ đưa filters người dùng chọn vào Qdrant, yêu cầu payload fields cần dùng và không trả vector ra client. Sau retrieval, loại candidate nếu không khớp published point/version, deleted hoặc chưa công bố trong DB quan hệ. Overfetch có giới hạn để bù point chưa công bố/cũ; nếu cần, trả ít kết quả thay vì bỏ filters. Theo dõi tỷ lệ candidate bị loại để phát hiện sync lag hoặc cleanup chậm.
 
@@ -76,7 +79,7 @@ API chọn generation/profile, tìm toàn kho và chỉ đưa filters người d
 1. Transaction DB quan hệ tạo desired_version, search_projection intent, snapshot/artifact references và outbox event. Metadata snapshot được ghi bất biến trước commit; embedding có thể lưu artifact để retry không phải inference lại.
 2. Worker claim event với lease/fencing; đọc snapshot/artifact theo hash, kiểm tra lifecycle/version trước gửi.
 3. Upsert vector + payload Qdrant cùng một point, chờ thao tác áp dụng và kiểm tra khả năng đọc theo cấu hình consistency đã chọn. Timeout chưa rõ kết quả được retry cùng ID/nội dung, không sinh projection mới.
-4. Transaction DB quan hệ so lease, desired_version, generation và lifecycle; nếu hợp lệ cập nhật published_projections/current_version và job thành công. Nếu không hợp lệ, point thành artifact chưa công bố, đưa vào cleanup.
+4. Chờ graph projection cùng version đã được xác minh theo [graph consistency](graph-reranking-design.md). Transaction DB quan hệ so lease, desired_version, generation và lifecycle; nếu hợp lệ cập nhật published_projections, published_graph_projections/current_version, tăng graph_revision và job thành công. Nếu graph chưa ready, giữ point staging và retry target graph, không công bố version mới. Nếu không hợp lệ, point thành artifact chưa công bố, đưa vào cleanup.
 5. Chỉ sau bước 4 ảnh được coi searchable. Không cần một payload flag ready để thay cho pointer SQL; point có thể được Qdrant tìm thấy trước commit nhưng API phải loại.
 
 Write Qdrant đã bay đi có thể hoàn tất sau khi lease mất hoặc ảnh bị xóa. Fencing SQL không ngăn được việc đó. Bảo vệ bằng point revision bất biến + pointer công bố có điều kiện + final catalog check; purge/reconciliation lặp lại để dọn point xuất hiện trễ. Không tuyên bố có transaction nguyên tử giữa hai hệ.
@@ -95,6 +98,6 @@ Reconciliation: catalog ready thiếu point → replay từ artifact hoặc snap
 
 Tạo collection generation mới, backfill, phát thay đổi vào generation mới qua outbox, catch-up và đối soát trước cutover. Active pointer trong DB quan hệ trỏ tên collection vật lý + profile; API không dùng alias đổi độc lập với encoder. Có thể dùng alias cho vận hành nếu không tạo nguồn cấu hình đọc thứ hai.
 
-Backup gồm DB quan hệ, Qdrant snapshot và object storage/metadata snapshots. Restore cách ly, đối soát generations/pointers/tombstones/payload hashes rồi mới phục vụ; snapshot ba hệ không mặc định cùng một thời điểm. Không cho rebuild hoặc replay làm sống lại ảnh đã xóa.
+Backup gồm DB quan hệ, Qdrant snapshot, graph snapshot hoặc artifacts đủ rebuild và object storage/metadata snapshots. Graph pointers/shared facts và graph_revision phải được đối soát trước phục vụ. Restore cách ly, đối soát generations/pointers/tombstones/payload hashes rồi mới phục vụ; snapshot các hệ không mặc định cùng một thời điểm. Không cho rebuild hoặc replay làm sống lại ảnh đã xóa.
 
 Số shard, replication factor, on-disk vector/payload và quantization chưa chốt. Benchmark 100k/1M phải đo riêng vector index, payload index, sync backlog và API catalog recheck. Đếm cả version cũ, point chưa công bố, hai generation và metadata snapshots khi dự toán dung lượng. Không tạo cluster chỉ vì đạt một triệu ảnh.

@@ -1,28 +1,39 @@
 # Thiết kế tìm kiếm và kế hoạch đánh giá
 
-Trạng thái: đề xuất, chưa có số đo. Liên quan FR01–FR04, NFR01–NFR04. FR07 feedback đã bỏ; bộ nhãn benchmark offline vẫn cần thiết và không tạo tính năng feedback.
+Trạng thái: đề xuất, chưa có số đo. Cập nhật 06/11/2026: graph search và VLM rerank thuộc phạm vi C12. Liên quan FR01–FR04, FR14–FR15, NFR01–NFR04. Thiết kế chi tiết ở [graph và reranking](graph-reranking-design.md). FR07 feedback đã bỏ; bộ nhãn benchmark offline vẫn cần thiết và không tạo tính năng feedback.
 
 ## 1. Baseline và các cấu hình so sánh
 
-Baseline A: metadata keyword nếu có dữ liệu. Baseline B: image embeddings với text query encoder tương thích, không yêu cầu caption. Cấu hình C: hybrid B + keyword bằng RRF nếu baseline cho thấy bỏ sót tên riêng/mã hàng. Các cấu hình dùng cùng dataset, filters và tập truy vấn.
+| Cấu hình | Mục đích |
+| --- | --- |
+| A: keyword-only | Đối chứng lexical trên metadata có dữ liệu |
+| B: vector-only | Đối chứng image embeddings và text encoder tương thích, không yêu cầu caption |
+| C: vector + keyword | Baseline fusion bằng RRF |
+| D: C + graph | Đo riêng lợi ích entity linking và quan hệ |
+| E: C + VLM rerank | Đo riêng lợi ích reranker |
+| F: C + graph + VLM rerank | Cấu hình triển khai đầy đủ theo C12 |
+
+Các cấu hình dùng cùng dataset, filters, tập truy vấn và pooled judgments. A–E là baseline/ablation để đánh giá, không thay thế phạm vi F. Graph có thể skip theo query intent đã version; keyword cần metadata hữu ích và lexical scoring được đặc tả, không giả thành đã có dữ liệu khi inventory chưa hoàn tất.
 
 So sánh checkpoint CLIP và SigLIP 2 phù hợp tài nguyên; ghi revision chính xác, processor, dimension và normalization. Đây là ứng viên thử nghiệm, không phải lựa chọn model đã chốt. Đa ngôn ngữ phải được đo bằng truy vấn Việt thực tế; không suy diễn chất lượng từ tên model.
 
-Qdrant là vector store đã chọn và giữ search metadata. Benchmark dùng chọn model, query/index configuration và topology; DB quan hệ không chạy nhánh tìm trên bản sao title/tags. Nhánh keyword nếu bật dùng khả năng lexical được cấu hình rõ trên Qdrant, không coi text filter là lexical ranker.
+Qdrant là vector store đã chọn và giữ search metadata. Benchmark dùng chọn model, query/index configuration và topology; DB quan hệ không chạy nhánh tìm trên bản sao title/tags. Nhánh keyword dùng khả năng lexical được cấu hình rõ trên Qdrant, không coi text filter là lexical ranker.
 
 Nguồn tham khảo: [Sentence Transformers image search](https://www.sbert.net/examples/sentence_transformer/applications/image-search/README.html), [SigLIP 2](https://arxiv.org/abs/2502.14786), [Google model card](https://huggingface.co/google/siglip2-base-patch16-224), [Qdrant indexing](https://qdrant.tech/documentation/manage-data/indexing/), [Qdrant fusion](https://qdrant.tech/documentation/hybrid-queries/).
 
 ## 2. Query và retrieval
 
-Chuẩn hóa Unicode NFC, trim khoảng trắng, giữ dấu và bản gốc; kiểm tra tokenizer trước inference. Không tự dịch hoặc mở rộng query trong baseline. Nếu thử dịch Việt→Anh, đánh giá như một cấu hình riêng với độ trễ và lỗi tên riêng.
+Chuẩn hóa Unicode NFC, trim khoảng trắng, giữ dấu và bản gốc; kiểm tra tokenizer trước inference. Không tự dịch hoặc mở rộng query trong baseline. Cấu hình có graph dùng entity linker/taxonomy versioned và template traversal; tách hard relation constraints khỏi graph boost, không bắt buộc LLM để lập query plan. Nếu thử dịch Việt→Anh, đánh giá như một cấu hình riêng với độ trễ và lỗi tên riêng.
 
 Filters do API validate chuyển thành predicates phía server. Truy vấn vector tìm toàn kho đã công bố; collection chỉ là filter tùy chọn, không dựa trên user/role. Recheck catalog/pointer trước trả response. Nếu ANN trả thiếu do filter, có thể tăng search effort có giới hạn hoặc exact trên tập nhỏ theo query plan đã đo, không bỏ filter để có đủ số lượng.
 
-Lấy 200 ứng viên cho snapshot là cấu hình đề xuất đầu; khi hybrid, thử lấy 200 mỗi nhánh trước fusion và cắt còn 200. Cần tăng retrieval effort phù hợp nếu dedup/threshold làm thiếu ứng viên. Limit UI không đồng nghĩa số ứng viên nội bộ.
+Thử lấy 200 ứng viên mỗi nhánh, fusion/dedup và kiểm chứng còn tối đa 200; chọn rerank_window=50 (ít nhất bằng limit đã validate) cho VLM. Snapshot chỉ chứa shortlist đã rerank, tối đa 50 trong ví dụ này; không nối đuôi chưa chấm. API vẫn giữ trần 200, không bảo đảm luôn đủ trần. Overfetch/graph membership check có giới hạn để bù stale/filter rejections; không bỏ hard constraint để đủ số ảnh. Limit UI khác candidate/rerank window.
 
-RRF baseline: score(d) = tổng 1/(k + rank(d)), với rank bắt đầu từ 1 và k=60 là giá trị thử nghiệm ban đầu, không dựa vào default của thư viện. Lưu k và trọng số vào ranking_version. Không cộng cosine với lexical score chưa hiệu chỉnh.
+RRF baseline: score(d) = tổng 1/(k + rank(d)), với rank bắt đầu từ 1 và k=60 là giá trị thử nghiệm ban đầu, không dựa vào default của thư viện. Lưu k và trọng số vào ranking_version. Không cộng cosine, lexical, graph và VLM score chưa hiệu chỉnh. Weighted RRF kết hợp các nhánh retrieval; VLM sau đó chấm query–ảnh trên shortlist, tie-break fusion rank rồi image_id. Graph-only candidates hydrate đúng published point Qdrant và chịu cùng filters. RRF có thể thực hiện ở Search module để hợp nhất cả graph ngoài Qdrant.
 
 Chỉ dedup theo image_id trong MVP bắt buộc; gộp ảnh gần giống cần nhãn kiểm chứng vì có thể che mất sản phẩm/phiên bản quan trọng.
+
+Output VLM phải có đúng tập candidate_id/content_version và score hữu hạn [0, 1]; output sai hoặc thiếu batch làm rerank thất bại. Strict là mặc định; fallback khai báo trước dùng lại toàn bộ fusion shortlist và báo degraded. Final lifecycle/pointer và graph revision check chạy sau VLM; phân trang dùng snapshot, không inference lại.
 
 ## 3. Query không có đáp án
 
@@ -38,7 +49,7 @@ Mỗi query có query_id, text, language, filters, intent_group, answerability, 
 
 Pool ứng viên từ tất cả cấu hình được so sánh; randomize thứ tự khi gán nhãn để giảm thiên lệch. Hai người gán nhãn một phần dữ liệu và xử lý bất đồng trước khi mở rộng. Lưu version tập dữ liệu; không commit ảnh riêng hoặc query có dữ liệu nhạy cảm vào Git.
 
-Chia development/test trước tuning; query cùng ý định hoặc diễn đạt gần nhau phải cùng phía để giảm leakage. Chỉ dùng development để chọn model, RRF, threshold. Nếu dùng test để sửa cấu hình nhiều lần, cần tập holdout mới cho kết luận cuối.
+Chia development/test trước tuning; query cùng ý định hoặc diễn đạt gần nhau phải cùng phía để giảm leakage. Chỉ dùng development để chọn encoder/VLM, prompt/processor, graph linking/traversal, RRF, rerank window và threshold. Nếu dùng test để sửa cấu hình nhiều lần, cần tập holdout mới cho kết luận cuối.
 
 ## 5. Chỉ số và cách diễn giải
 
@@ -47,6 +58,9 @@ Chia development/test trước tuning; query cùng ý định hoặc diễn đ�
 | Precision@10 | Số nhãn 2 trong 10 vị trí chia 10; nếu trả dưới 10, vị trí thiếu tính không phù hợp; báo thêm số kết quả trung bình |
 | nDCG@10 | Gain 2^label−1, discount log2(rank+1); tính trên pool đã gán nhãn, ghi rõ độ phủ nhãn |
 | Success@K | Có ít nhất một nhãn 2 trong K vị trí đầu |
+| Candidate Success@K | Có ít nhất một nhãn 2 trong candidate set trước VLM; báo độ phủ pooled judgments, không coi là recall toàn kho |
+| Entity linking / graph coverage | Tỷ lệ liên kết đúng trên nhãn entity và độ phủ ảnh/quan hệ có nguồn xác minh |
+| Hard graph constraint violations | Tỷ lệ item vi phạm điều kiện quan hệ bắt buộc; correctness gate yêu cầu không vi phạm trong fixtures/benchmark đã xác minh |
 | ANN Recall@100 | Giao ID với exact top-100 chia số exact neighbors hợp lệ; cùng vector, metric và filters; nếu tập exact rỗng thì báo riêng |
 | No-answer false acceptance | Tỷ lệ query không có đáp án vẫn trả kết quả được hệ thống coi là đủ phù hợp |
 | Answerable false rejection | Tỷ lệ query có đáp án bị hệ thống từ chối toàn bộ |
@@ -59,12 +73,12 @@ Ties trong exact/ANN được xử lý bằng quy tắc ID ổn định hoặc b
 
 Hai mốc 100k/1M ảnh đại diện. Tải khám phá 1/5/20 QPS, filters có tỷ lệ match khoảng 50%/10%/1%; thay bằng tải mục tiêu khi Q03 chốt. Chạy warm/cold riêng, import bật/tắt riêng, ghi thời lượng và số request; mỗi kịch bản warm đề xuất 5 phút ổn định rồi đo 15 phút, điều chỉnh để đủ mẫu p95/p99 đáng tin.
 
-Ghi p50/p95/p99, throughput thực, timeout/error rate, encode/Qdrant/catalog recheck timings, RAM/VRAM, CPU, disk I/O, payload index size và index build time. Đo outbox lag, tỷ lệ candidate cũ/chưa công bố bị loại, thời gian sync/purge và ảnh hưởng của batch writes. Load generator không được thành nút thắt. Không dùng vector nhân bản để thay cho kho ảnh đa dạng khi nghiệm thu.
+Ghi p50/p95/p99, throughput thực, timeout/error rate, encode/keyword/entity-linking/graph/fusion/hydration/image-fetch/VLM/final-check timings, RAM/VRAM, CPU, disk I/O, payload index size và index build time. Đo outbox lag theo Qdrant/graph target, graph revision retry, VLM output failure/fallback rate và cost/query, tỷ lệ candidate cũ/chưa công bố bị loại, thời gian sync/purge và ảnh hưởng của batch writes. Load generator không được thành nút thắt. Không dùng vector nhân bản để thay cho kho ảnh đa dạng khi nghiệm thu.
 
-Mục tiêu đề xuất: p95 warm < 2 giây và ANN Recall@100 ≥ 95%. Phải báo kèm QPS/phần cứng/filters; semantic quality, error budget và mức chênh lệch chấp nhận giữa các nhóm chờ chốt. Chưa thể tuyên bố MVP đạt yêu cầu khi các mục này còn trống.
+Mục tiêu đề xuất: p95 warm < 2 giây và ANN Recall@100 ≥ 95%. p95 tính toàn pipeline gồm graph và VLM; deadline/shortlist cần chốt Q15 sau benchmark, không lấy số đo vector-only làm số đo cấu hình F. Phải báo kèm QPS/phần cứng/filters; semantic quality, error budget và mức chênh lệch chấp nhận giữa các nhóm chờ chốt. Chưa thể tuyên bố MVP đạt yêu cầu khi các mục này còn trống.
 
 ## 7. Báo cáo thử nghiệm chuẩn
 
-Mỗi lần chạy lưu experiment_id, dataset revision, query/judgment revision, model/processor revision, generation, ranking config, dependency versions, hardware, load config, raw measurements, summary và phân tích lỗi. Ghi cả cấu hình thất bại để tránh chọn lọc kết quả.
+Mỗi lần chạy lưu experiment_id, dataset revision, query/judgment revision, model/processor revision, vector/graph generation và graph revision, entity-linker/schema revision, fusion config, VLM model/processor/prompt/decoding revision, rerank window, failure policy, dependency versions, hardware, load config, raw measurements, summary và phân tích lỗi. Ghi cả cấu hình thất bại để tránh chọn lọc kết quả.
 
-Phân loại lỗi: thiếu dữ liệu, sai ngữ nghĩa, sai OCR/tên, tokenizer/ngôn ngữ, filter/authorization, ANN miss, duplicate, stale version, timeout. Chỉ đề xuất OCR, reranker hoặc fine-tune sau khi xác định nhóm lỗi và chi phí cải thiện.
+Phân loại lỗi: thiếu dữ liệu, sai ngữ nghĩa, sai OCR/tên, tokenizer/ngôn ngữ, filter/authorization, ANN miss, duplicate, stale version, timeout. Graph và VLM rerank đã thuộc phạm vi; dùng phân tích lỗi để điều chỉnh linking, traversal, prompt, shortlist và model. Chỉ bổ sung OCR/caption, trích graph bằng VLM hoặc fine-tune khi có bằng chứng riêng.

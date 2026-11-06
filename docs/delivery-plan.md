@@ -7,10 +7,10 @@ Trạng thái: backlog cấp thiết kế. Chưa có lịch tuần do chưa bi�
 | Giai đoạn | Công việc | Đầu ra và điều kiện chuyển |
 | --- | --- | --- |
 | P0: khám phá dữ liệu | Inventory nguồn, thống kê kích thước/format/metadata, query thật, quyền | Data inventory, Q01/Q02/Q05/Q07 có câu trả lời đủ cho thử nghiệm |
-| P1: thử nghiệm truy hồi | Mẫu đại diện, nhãn dev/test, so model và keyword/vector | Báo cáo semantic baseline, cấu hình có thể tái lập; thống nhất Q08 |
-| P2: nền tảng | Chốt DB quan hệ/toolchain, Qdrant collections/payload indexes, object storage, identity, migrations, CI | Import và search skeleton chạy được với fixtures, manifest/lockfile/README đầy đủ |
-| P3: pipeline dữ liệu | Batch jobs, lease/fencing, thumbnails, versioning, update/delete | Import phục hồi sau crash, replay an toàn, kiểm tra integrity |
-| P4: sản phẩm tìm kiếm | Search/filter/snapshot/detail/download, login/logout/account/admin và UI | FR01–FR06, FR08–FR13 có kiểm thử, demo hành trình đầy đủ |
+| P1: thử nghiệm truy hồi | Mẫu đại diện, nhãn dev/test, so encoder, keyword/vector, graph ablation và VLM rerank | Báo cáo semantic baseline, cấu hình có thể tái lập; thống nhất Q08, Q13–Q15 cho cấu hình đầy đủ |
+| P2: nền tảng | Chốt DB quan hệ/toolchain, Qdrant collections/payload indexes, graph storage adapter/schema, VLM inference adapter, object storage, identity, migrations, CI | Import và search skeleton chạy được với fixtures, manifest/lockfile/README đầy đủ |
+| P3: pipeline dữ liệu | Batch jobs, lease/fencing, thumbnails, graph artifacts, dual projection publish, shared relations, versioning, update/delete | Import phục hồi sau crash, replay an toàn, kiểm tra integrity |
+| P4: sản phẩm tìm kiếm | Vector/keyword/graph retrieval, fusion, VLM rerank, strict/fallback, search/filter/snapshot/detail/download, login/logout/account/admin và UI | FR01–FR06, FR08–FR15 có kiểm thử, demo hành trình đầy đủ |
 | P5: tải và vận hành | 100k/1M, filters/QPS, import đồng thời, restore/reindex | Báo cáo NFR, runbook đã thực hành, capacity/cost estimate |
 | P6: pilot | Nhóm người dùng thật, đánh giá lỗi và giới hạn | Quyết định phát hành dựa trên yêu cầu đã chốt, không còn blocker quyền/dữ liệu |
 
@@ -21,7 +21,9 @@ P0 dùng [biểu mẫu kiểm kê dữ liệu](data-inventory.md). P1 có thể 
 - DATA: inventory, sample có quyền, manifest revisions, metadata quality, label set.
 - CORE: users/roles/refresh registry, JWT login/refresh/logout, rotation/reuse và Origin/header policy, catalog/version schema, Qdrant client và payload schema/indexes, object storage adapter, audit.
 - INGEST: parser, jobs/leases, validate/decode, thumbnail, metadata snapshots, image batch encoder, transactional outbox, revisioned points, publish/retry/reconcile/purge.
-- SEARCH: query validation, text encoder, vector retriever, filters, optional lexical fusion, snapshots.
+- GRAPH: entity/alias schema, provenance, source revisions, entity linker, traversal templates/budgets, graph projection/shared-fact registry, target deliveries, publish/reconcile/purge và backfill/cutover.
+- SEARCH: query validation, text encoder, vector/keyword/graph retrievers, hard relation membership, hydration/filters, weighted RRF, snapshots.
+- RERANK: VLM adapter, versioned model/processor/prompt/output schema, shortlist, rendition fetch, batching/admission, output validation, stable ordering và strict/fallback policy.
 - API/UI: hợp đồng lỗi, detail/media, import progress/retry, auth/download/account UI và các trạng thái giao diện.
 - EVAL/OPS: deterministic fixtures, integration tests, benchmark runner, metrics, backup/restore, reindex/cutover.
 
@@ -44,6 +46,8 @@ Các nhóm là backlog logic, không chỉ định thêm agent hoặc microservi
 | FR11 | Logout/logout-all | Refresh family và access token cũ bị từ chối, clear refresh cookie, idempotence và DB failure |
 | FR12 | Account/password/role/status | Auth_version, revoke refresh families, optimistic revision, last-admin race |
 | FR13 | Download | Khách 401; user mọi role tải mọi ảnh published, search không lộ URL gốc |
+| FR14 | Graph schema/linker/traversal, hard membership và graph publish | Entity ambiguity/alias, cycles/budgets, hard constraint không bị bỏ, stale/shared revisions và ablation quality |
+| FR15 | VLM shortlist/validator/snapshot | Output ngoài tập/thiếu/trùng ID, timeout/fallback, đúng image version, pagination không rerank lại và model benchmark |
 | NFR01 | Scale plan | Mốc 100k và 1M thật đại diện |
 | NFR02 | Search admission/deadline | p95 ở QPS/hardware/filter đã chốt |
 | NFR03 | Semantic evaluation | Holdout report, subgroup metrics, Q08 đã chốt |
@@ -56,7 +60,7 @@ Chi tiết ở [PRD](prd.md), [API](api-contract.md), [ingestion](ingestion-desi
 
 ## 4. Chiến lược kiểm thử khi triển khai
 
-Unit test cho logic có rủi ro: validation, cursor signing, role checks và public-search policy, state transitions, version checks và fusion. Integration test với DB quan hệ/Qdrant/storage adapters để kiểm chứng filters, lease, visibility và outbox replay. Bắt buộc kiểm tra crash sau Qdrant upsert trước SQL publish, write trễ sau delete, duplicate event, payload hash sai và restore lệch mốc; không giả định transaction xuyên hệ. Mock external inference/network cho test thường xuyên; live benchmark chạy riêng trên dữ liệu được phép.
+Unit test cho logic có rủi ro: validation, cursor signing, role checks và public-search policy, state transitions, version checks và fusion. Integration test với DB quan hệ/Qdrant/graph/storage/VLM adapters để kiểm chứng filters, lease, visibility và outbox replay. Bắt buộc kiểm tra crash sau Qdrant upsert trước SQL publish, write trễ sau delete, duplicate event, payload hash sai và restore lệch mốc; không giả định transaction xuyên hệ. Mock external inference/network cho test thường xuyên; live benchmark chạy riêng trên dữ liệu được phép.
 
 End-to-end tối thiểu: nhập ảnh → đợi ready → tìm → lọc → phân trang → khách detail/download bị yêu cầu login → login → xem detail/download → logout → cập nhật → xóa → tìm lại không trả ảnh đó. Chạy thêm user gọi admin bị từ chối, hai user dùng cùng toàn kho, access/refresh hết hạn, reuse/response loss/role đổi, lỗi dependency và worker restart. Không kiểm tra chất lượng model bằng assertion trên vài ảnh rồi thay cho semantic benchmark.
 
@@ -73,4 +77,6 @@ Toolchain và lệnh test chưa cấu hình. Khi thêm source đầu tiên phả
 
 ## 6. Mở rộng sau pilot
 
-Ưu tiên dựa trên lỗi thực tế: cải thiện metadata/hybrid → OCR/caption/reranker khi có bằng chứng → tìm bằng ảnh → nguồn ngoài theo nhu cầu. Thứ tự hai mở rộng cuối có thể đổi theo sản phẩm; mỗi phần cần PRD và benchmark riêng, không tự đưa vào MVP hiện tại.
+Graph search và VLM rerank là đầu ra P1–P5 hiện tại, không hoãn sau pilot. Sau pilot ưu tiên dựa trên lỗi thực tế: cải thiện metadata/graph/fusion/reranker → OCR/caption hoặc VLM graph extraction khi có bằng chứng → tìm bằng ảnh → nguồn ngoài theo nhu cầu. Thứ tự hai mở rộng cuối có thể đổi theo sản phẩm; mỗi phần cần PRD và benchmark riêng, không tự đưa vào MVP hiện tại.
+
+Phụ thuộc bổ sung: P0 xác định nguồn thực thể/quan hệ và quyền dùng VLM; P1 thử graph và VLM trên mẫu trước backfill; P3 hoàn tất dual-projection consistency trước P4 online; P5 đo toàn pipeline, cả strict và fallback, graph revision đổi trong inference/pagination, restore graph/shared facts và contention GPU giữa import/rerank. Không nghiệm thu FR14/FR15 chỉ bằng việc đã có adapter hoặc sơ đồ.
