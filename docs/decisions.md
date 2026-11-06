@@ -24,6 +24,7 @@ Trạng thái ngày 06/11/2026. “Đã xác nhận” chỉ dùng cho thông ti
 | C16 | Một người phát triển, backend FastAPI và PostgreSQL | Người dùng ngày 06/11/2026 |
 | C17 | Triển khai local trước; RAM hệ thống 16 GB, Intel Raptor Lake-P dùng RAM chia sẻ, không VRAM chuyên dụng cố định; cho phép API VLM ngoài | Người dùng và làm rõ phần cứng ngày 06/11/2026 |
 | C18 | Query một mục tiêu, nhiều mục tiêu như “ảnh Hạ Long, ảnh Cát Bà”, và multi-hop có suy luận quan hệ | Người dùng và làm rõ multi-target ngày 06/11/2026 |
+| C19 | Frontend đơn giản theo phong cách Google Images; Next.js App Router/TypeScript, Tailwind, shadcn/ui, TanStack Query và fetch; code trong frontend/, xây search từ phase 3 | Người dùng yêu cầu đưa đề xuất FE vào kế hoạch |
 
 ## 2. ADR và trạng thái
 
@@ -73,7 +74,7 @@ Lịch sử ADR03: 04/11/2026 đề xuất PostgreSQL + pgvector để giảm th
 | Q07 | Chưa có dataset; cần chốt nguồn/seed crawl, mapping license/attribution, quotas và cập nhật/xóa | Web acquisition/source adapter và import | Crawl sample và trước import diện rộng |
 | Q08 | Mức chất lượng đủ dùng theo nhóm query và ai gán nhãn? | Semantic acceptance gate | Nghiệm thu MVP |
 | Q09 | Retention query, refresh registry, audit, backup và thời hạn purge? | Dữ liệu nhạy cảm, chi phí, xóa | Bật thu thập/lưu dữ liệu tương ứng |
-| Q10 | Một người, FastAPI/PostgreSQL đã chốt; frontend và deadline còn mở | Toolchain/UI và lịch | Trước cam kết lịch |
+| Q10 | Một người, FastAPI/PostgreSQL đã chốt; frontend theo C19, deadline còn mở | Toolchain/UI và lịch | Trước cam kết lịch |
 | Q11 | Đã giải quyết: khách search/thumbnail; detail/download cần login, mọi user dùng toàn kho | C09; không phải câu hỏi còn mở | Đã chốt 05/11/2026 |
 | Q12 | Admin cấp tài khoản hay tự đăng ký? Có SSO/quên mật khẩu/email recovery trong MVP không? | Provisioning tài khoản và trải nghiệm khách muốn tải ảnh | Chốt workflow tài khoản |
 | Q13 | Loại thực thể/quan hệ, nguồn chuẩn, độ phủ, quy tắc hợp nhất thực thể và graph engine nào? | Graph schema, chất lượng và consistency | Khóa graph profile và backfill |

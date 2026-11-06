@@ -6,7 +6,7 @@
 
 | Phase | Mục tiêu | Đầu ra | Cổng hoàn tất |
 |---|---|---|---|
-| 0. Scaffold | Tạo nền local có thể chạy và phát triển | FastAPI, PostgreSQL, Qdrant, 9 bảng, cấu hình local, logging, migration, formatter/linter/test toolchain, API/worker skeleton | Có thể khởi động lại local theo README; fixture image đi qua health check; secrets không vào Git |
+| 0. Scaffold | Tạo nền local có thể chạy và phát triển | FastAPI, PostgreSQL, Qdrant, 9 bảng, cấu hình local, logging, migration, formatter/linter/test toolchain, API/worker skeleton; scaffold Next.js/TypeScript, Tailwind/shadcn, Query provider và fetch client | Có thể khởi động lại local theo README; fixture image đi qua health check; secrets không vào Git |
 | 1. Dataset và truy vấn | Có dữ liệu dùng để đánh giá địa danh | Thử Wikimedia Commons cho ảnh và Wikidata cho entity/quan hệ; chọn 20–30 địa danh, thu 20–50 ảnh/địa danh (tối đa 1.500); lập query Việt thật | Mẫu ảnh được dedup và kiểm tra liên kết nơi chụp; mỗi ảnh giữ source page/media URL, external ID, tác giả, license, attribution, fetched time/hash; facts có source/revision; query có nhãn single/multi-target/multi-hop/no-answer |
 | 2. Crawler và ingestion | Nhập web sample vào kho an toàn, có thể tiếp tục sau lỗi | Adapter Commons/Wikidata có checkpoint; crawl jobs; rate limits/User-Agent; URL/redirect/DNS/size checks; object storage local; thumbnail/hash/dedup; attribution; import/vector/graph publish | Crawl resume/retry được; attribution/license và liên kết ảnh–địa danh được giữ trong metadata; ảnh không đủ provenance bị loại khỏi publish; deleted/stale item không xuất hiện; crawl không nằm trên search path |
 | 3. Single-target retrieval | Hoàn thiện baseline tìm một địa danh | Keyword và vector retrieval; benchmark CLIP so với SigLIP 2 trên CPU; filters; API kết quả có source/attribution | Bộ test Vietnamese single/no-answer có nhãn; chọn baseline bằng chất lượng, latency và RAM đo được; không quyết theo model name |
@@ -16,9 +16,25 @@
 | 7. Sản phẩm MVP | Hoàn thiện hành trình, quyền và vận hành | UI/API tìm/lọc/nhóm/phân trang; import/admin; auth/media; attribution; backup/restore; telemetry và hướng dẫn dùng | FR có bằng chứng; data deletion không hồi sinh; guest/user/admin đúng quyền; reindex theo maintenance; lỗi dependency không giả thành rỗng |
 | 8. Pilot và scale | Đưa đến nhóm dùng thử rồi mở rộng theo tải | Pilot local/staging; báo cáo chất lượng, QPS, p95, tài nguyên, API cost; kế hoạch deploy | Chốt quality/SLO/RPO-RTO/retention; diễn tập restore; chỉ sau khi workload đạt mới thử mốc lớn hơn hướng tới 100k–1M |
 
+## Frontend theo giai đoạn
+
+Stack: Next.js App Router + TypeScript + Tailwind CSS + shadcn/ui + TanStack Query; native fetch gọi FastAPI. Thiết kế đơn giản như Google Images: nền trắng, search bar, filters và lưới ảnh. Code ở `frontend/`, tổ chức theo feature; [kế hoạch MVP mục 7](landmark-mvp-plan.md#7-frontend-tối-giản) là nguồn chi tiết.
+
+| Phase | Công việc FE | Điều kiện hoàn tất |
+|---|---|---|
+| 0. Scaffold FE | Next.js/TypeScript, Tailwind/shadcn Button, Query provider, fetch client, proxy FastAPI, lint/typecheck/build và lockfile | Chạy dev server, lint/typecheck/build được; chưa có nghiệp vụ search/auth |
+| 3. Single-target | Xây trang tìm kiếm, filters, grid và panel mock trên scaffold có sẵn rồi nối API thật | URL giữ query/filters; loading/rỗng/lỗi rõ; ảnh giữ tỷ lệ, dùng được trên desktop/mobile; guest detail tuân auth contract |
+| 4. Multi-target | Nhóm kết quả theo target, count/trạng thái từng nhóm; tải thêm theo cursor | Hạ Long/Cát Bà không bị trộn quota; response cũ không ghi đè query mới; snapshot expired tạo lượt mới |
+| 5. Graph/multi-hop | Mục mở “Thông tin tìm kiếm” chứa path/facts và source links | Evidence đúng group/revision, thiếu dữ liệu được báo rõ |
+| 6. VLM | Hoàn thiện trạng thái chờ, timeout/retry, degraded theo response | Không hiển thị score như xác suất; không tự giả kết quả khi backend lỗi |
+| 7. Sản phẩm | Login/account, preview/download, crawl/import progress/retry, quản trị ảnh/tài khoản; hoàn thiện responsive, keyboard/focus, attribution | Token/refresh theo FastAPI, cache xóa khi đổi user/logout; E2E search → login → detail/download, admin và lỗi có bằng chứng |
+| 8. Pilot | Đo tải thumbnail, layout shifts và trải nghiệm trên mobile/mạng chậm; chuẩn bị config deploy | Chốt frontend build/runtime, API/media origins; kiểm tra auth và deep link trên môi trường pilot |
+
+Mock data phải có single, multi-target thiếu một nhóm, multi-hop và lỗi. Các hành vi quyền/media vẫn do FastAPI kiểm soát; FE scaffold nằm ở phase 0; phase 3 bắt đầu màn hình tìm kiếm. Toolchain/lockfile và lệnh chạy/lint/build nằm trong README.
+
 ## Trạng thái phase 0
 
-Đã tạo layout src/modules/adapters/api, app factory FastAPI, config/logging, local object storage, Alembic 9 bảng, Compose PostgreSQL/Qdrant, worker idle, fixture/smoke CLI và bộ công cụ lint/test/build. Unit tests, lint, build và migration SQL offline đã chạy được. Chưa đánh dấu hoàn tất phase 0: môi trường triển khai hiện tại chưa có Docker/PostgreSQL/Qdrant nên còn chờ migration online, integration tests và smoke readiness thật. Worker chưa claim job; auth/search/crawl mới có ranh giới module, triển khai ở phase sau.
+Đã tạo layout src/modules/adapters/api, app factory FastAPI, config/logging, local object storage, Alembic 9 bảng, Compose PostgreSQL/Qdrant, worker idle, fixture/smoke CLI và bộ công cụ lint/test/build. Unit tests, lint, build và migration SQL offline đã chạy được. Docker Desktop đã chạy PostgreSQL/Qdrant; migrations 0001/0002 đã áp và test tích hợp đã qua. Cổng phase 0 còn cần kiểm tra luồng khởi động lại/smoke API theo README; frontend đã có scaffold phase 0, lint/typecheck/format và production build đã qua; HTTP trang chủ và proxy health FastAPI đã kiểm tra được. Trang tìm kiếm nghiệp vụ bắt đầu ở phase 3. Worker chưa claim job; auth/search/crawl mới có ranh giới module, triển khai ở phase sau.
 
 ## Phụ thuộc và cách làm
 

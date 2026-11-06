@@ -71,6 +71,8 @@ Feedback, ACL theo ảnh/collection, tìm bằng ảnh, ảnh + văn bản, craw
 
 ## 6. Trạng thái giao diện
 
+Hướng giao diện đã chọn: đơn giản như Google Images, nền trắng, search bar phía trên, filters gọn, lưới ảnh giữ tỷ lệ. Single target vào thẳng grid; multi-target dùng tiêu đề nhóm nhỏ. Chi tiết dùng panel phải trên desktop/toàn màn hình trên mobile sau kiểm tra login; multi-hop evidence mở khi cần. Trang tài khoản/admin có đường dẫn riêng. Frontend dùng Next.js/TypeScript, Tailwind, shadcn/ui, TanStack Query và fetch; cấu trúc/hành vi ở [kế hoạch MVP mục 7](landmark-mvp-plan.md#7-frontend-tối-giản).
+
 - Chưa tìm: ví dụ tiếng Việt về địa danh; phân biệt một target, nhiều targets và multi-hop.
 - Nhiều targets: hiển thị nhóm riêng với tên địa danh/ảnh và trạng thái thiếu ảnh; bằng chứng multi-hop là facts/source path, không chain-of-thought.
 - Đang tìm: giữ query và filters; hủy hoặc bỏ qua response của request cũ khi người dùng tìm lại.

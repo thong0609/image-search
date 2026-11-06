@@ -4,7 +4,7 @@ Tìm ảnh địa danh tiếng Việt bằng vector + keyword + graph và VLM re
 
 ## Cấu trúc
 
-- `src/image_search/api/v1/`: HTTP routes; hiện có `/health/live`, `/health/ready`; các router nghiệp vụ mới là skeleton.
+- `src/image_search/api/v1/`: HTTP routes; hiện có `/health/live`, `/health/ready`; thêm router nghiệp vụ khi triển khai từng feature.
 - `src/image_search/modules/`: search, crawling, catalog, ingestion, graph, auth, jobs; nghiệp vụ giao tiếp với hệ ngoài qua ports.
 - `src/image_search/adapters/`: PostgreSQL, Qdrant, local object storage; graph/embedding/VLM có chỗ mở rộng.
 - `src/image_search/main.py`: app factory và wiring dependencies; `config.py`: cấu hình môi trường.
@@ -64,7 +64,7 @@ Integration cần PostgreSQL/Qdrant thật; chỉ chạy trên DB thử nghiệm
 
 ## Ranh giới module
 
-Route validate request và gọi use case; service chứa nghiệp vụ. Adapter chứa client/SQL/I/O và được inject từ composition root. Các module không tự đọc `.env` hoặc tạo network client trong business rules. Giữ ports nhỏ theo use case; chỉ tạo interface/implementation khi dùng đến. `shared/` chỉ chứa lỗi, logging và ID dùng chung.
+Route validate request và gọi use case; service chứa nghiệp vụ. Adapter chứa client/SQL/I/O và được inject từ composition root. Các module không tự đọc `.env` hoặc tạo network client trong business rules. Giữ ports nhỏ theo use case; chỉ tạo interface/implementation khi dùng đến. `shared/` hiện chứa logging; chỉ thêm helper dùng chung khi có nơi sử dụng thực tế.
 
 ## Tài liệu
 
@@ -73,3 +73,27 @@ Route validate request và gọi use case; service chứa nghiệp vụ. Adapter
 - [Mục lục thiết kế](docs/README.md).
 
 Chưa có dataset/crawl/model thực tế. Local ban đầu dùng encoder CPU và VLM API ở phase tương ứng; Intel RAM chia sẻ 16 GB không được coi là VRAM dedicated. Ngân sách và checkpoint vẫn cần chốt.
+
+
+## Frontend phase 0
+
+Cài Node.js theo `frontend/.nvmrc` (24.22.2) và npm 11.19.1. Node/npm trong WSL cần được cài trong Linux distro, không chỉ trên Windows. Nếu đã dùng nvm: `cd frontend && nvm install && nvm use`.
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm ci
+npm run dev
+```
+
+Mở http://127.0.0.1:3000. `BACKEND_ORIGIN` trong `.env.local` trỏ FastAPI (mặc định http://127.0.0.1:8000); chạy backend riêng theo hướng dẫn phía trên. Next.js proxy `/v1/*` và `/health/*` tới backend; thử http://127.0.0.1:3000/health/ready khi backend và DB đang chạy. Khởi động lại Next.js sau khi đổi origin.
+
+```bash
+npm run lint
+npm run typecheck
+npm run format:check
+npm run build
+npm run start
+```
+
+`start` chạy production build trên port 3000 sau khi dừng dev server. Trang hiện tại chỉ là shell tối giản với search chưa bật; không giả kết quả hoặc gọi model. Stack: Next.js App Router/TypeScript, Tailwind CSS, shadcn config + Button, TanStack Query và fetch. Thư mục theo feature và quy tắc tích hợp ở [frontend/README.md](frontend/README.md). FE scaffold thuộc phase 0; search/grid/grouping/auth/admin được triển khai từ phase tương ứng trong delivery plan. Cả Node và Next.js chạy local riêng Docker DB.
