@@ -1,0 +1,5 @@
+"""HTTP routes for images; implemented in a later phase."""
+
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/images", tags=["images"])

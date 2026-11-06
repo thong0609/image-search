@@ -1,6 +1,6 @@
 # Tài liệu dự án
 
-Bộ tài liệu này mô tả dự án tìm ảnh địa danh bằng tiếng Việt. Đây là thiết kế; ứng dụng, dataset, crawler và benchmark chưa được triển khai.
+Bộ tài liệu này mô tả dự án tìm ảnh địa danh bằng tiếng Việt. Đã có scaffold phase 0 và migration; nghiệp vụ tìm kiếm, dataset, crawler và benchmark chưa được triển khai. Cách cài/chạy/kiểm tra hiện hành ở [README dự án](../README.md).
 
 ## Đọc theo nhu cầu
 

@@ -1,6 +1,6 @@
 # Mô hình dữ liệu — 9 bảng SQL
 
-Cập nhật 06/11/2026 theo C13: thay schema 24 bảng bằng 9 bảng dưới đây. Đây là schema logic, chưa có migration hoặc ứng dụng. UUID dùng cho định danh; thời gian UTC. Vector/search metadata nằm ở Qdrant, entity/relations ở graph store, ảnh và artifacts ở object storage. Không tính các cấu trúc ngoài SQL vào số bảng này.
+Cập nhật 06/11/2026 theo C13: thay schema 24 bảng bằng 9 bảng dưới đây. Schema này đã có migration đầu tiên ở migrations/versions/0001_initial.py và SQLAlchemy metadata trong adapters/postgres/schema.py; các ràng buộc workflow/JSON ở service sẽ triển khai theo phase. UUID dùng cho định danh; thời gian UTC. Vector/search metadata nằm ở Qdrant, entity/relations ở graph store, ảnh và artifacts ở object storage. Không tính các cấu trúc ngoài SQL vào số bảng này.
 
 ## 1. Danh sách và quan hệ
 
@@ -136,6 +136,6 @@ C18 query_plan giữ mode/targets/counts/statuses và evidence refs; target_ids 
 - Snapshot TTL đề xuất 15 phút; query logging mặc định tắt; root/token history, jobs/idempotency, tombstones, artifacts và audit dọn theo Q09. Job root giữ ít nhất cửa sổ idempotency; job/artifact đang cần retry/rebuild không được cleanup.
 - Reconcile so catalog/index_state với Qdrant/graph/object hashes, requeue jobs thiếu, dọn orphan sau grace period; không tự publish chỉ vì thấy point/edge. Backup/restore gồm SQL và các artifacts/config nguồn versioned.
 
-Đánh đổi C13: ít bảng hơn nhưng cần validate JSON/job types trong ứng dụng, source administration qua cấu hình, reindex có maintenance window và chưa hỗ trợ nhiều generation ghi song song. Giữ 9 bảng này làm schema hiện hành; sơ đồ chi tiết cũ 24 bảng đã được thay thế, chưa có migration dữ liệu thực tế.
+Đánh đổi C13: ít bảng hơn nhưng cần validate JSON/job types trong ứng dụng, source administration qua cấu hình, reindex có maintenance window và chưa hỗ trợ nhiều generation ghi song song. Giữ 9 bảng này làm schema hiện hành; sơ đồ chi tiết cũ 24 bảng đã được thay thế, đã có migration schema ban đầu, chưa có dữ liệu thực tế để chuyển đổi.
 
 C14–C18: FastAPI/PostgreSQL đã chọn. Source type đề xuất private hoặc web_import theo source config, pin external ID/version, original page/media URLs và attribution vào snapshots/Qdrant payload. Crawl root/result lưu manifest_ref/import_id, items/jobs không chứa toàn bộ HTML hoặc ảnh; external web data được sanitize/validate trước inference/hiển thị. Metadata địa danh và local resource budget ở [MVP địa danh](landmark-mvp-plan.md).
