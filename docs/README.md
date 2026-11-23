@@ -9,6 +9,8 @@ Cách chạy scaffold ở [README dự án](../README.md).
 | Tài liệu | Nội dung |
 |---|---|
 | [Chạy baseline](baseline-usage.md) | Lệnh CLI, sửa nhãn, tạo index và đọc báo cáo |
+| [Kết quả baseline v2](baseline-v2-results.md) | Mốc v2 đã chốt, kết quả ba phương pháp và giới hạn nhãn |
+| [Thiết kế bộ câu hỏi](benchmark-design.md) | Ngân hàng v2, độ phủ, rà nhãn và điều kiện thành golden set |
 | [Kế hoạch baseline](baseline-plan.md) | Các bước hướng dẫn để tự triển khai pipeline |
 | [Kế hoạch MVP địa danh](landmark-mvp-plan.md) | Phạm vi, crawler, metadata, query modes, frontend và giả định local |
 | [PRD](prd.md) | Yêu cầu sản phẩm và tiêu chí chấp nhận |

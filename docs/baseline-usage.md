@@ -88,6 +88,9 @@ Một đáp án (thay ID mẫu bằng hash ảnh thực tế):
   Code không tự nhận diện ảnh gần trùng hoặc tự xác minh nội dung thị giác.
 
 Ban đầu thử vài câu mỗi loại; mở rộng khoảng 50–100 câu khi luồng đã ổn.
+Baseline v2 đã chốt và chạy đủ 400 câu trong `var/benchmark-v2/` cho ba phương pháp.
+Xem [kết quả v2](baseline-v2-results.md) và [thiết kế bộ câu hỏi](benchmark-design.md).
+Nhãn benchmark còn ở mức ứng viên; 356 câu dương được chấm, 42 unknown không chấm.
 Phải đủ single, multi-target, multi-hop có đáp án trong cả dev và test, cùng ít nhất
 một câu không có đáp án đã xác minh.
 

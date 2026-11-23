@@ -60,6 +60,10 @@ Dùng SHA-256 bytes ảnh làm `image_id` và tên file để lưu một bản c
 
 Bắt đầu bằng vài câu mỗi dạng để kiểm tra luồng, sau đó mở rộng khoảng 50–100 câu. Có đủ ba dạng trong dev và test:
 
+V1 đã chạy với 58 câu. Baseline v2 đã chốt code và chạy 400 câu; xem
+[kết quả v2](baseline-v2-results.md). Bộ nhãn chưa được duyệt độc lập; xem
+[thiết kế bộ câu hỏi](benchmark-design.md).
+
 | Dạng | Ý nghĩa | Đáp án cần lưu |
 | --- | --- | --- |
 | Single | Một mục tiêu theo tên entity hoặc mô tả nội dung | Các `image_id` phù hợp |
