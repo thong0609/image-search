@@ -58,22 +58,22 @@ Dữ liệu nằm ngoài Git trong `var/benchmark-v2/`:
 - `repair-provenance.json`: hash nguồn/kết quả/script.
 - `coverage.json`, `audit.json`: phân bố và kiểm tra.
 - `evaluation-policy.json`: quy tắc chấm dự kiến.
-- `repair-summary.md`: các lỗi đã sửa và giới hạn còn lại.
+- `label-cleanup-notes.md`: các lỗi nhãn đã sửa và giới hạn còn lại.
 
-Snapshot trước sửa: `var/benchmark-v2-before-fixes/`. Giữ snapshot này để truy vết.
-`review-findings.md/json` là báo cáo lỗi lịch sử, có hash bản trước sửa.
+Hai snapshot `benchmark-v2-before-fixes/` và `benchmark-v2-before-label-cleanup/`
+đã được dọn sau khi chốt v2. Lịch sử nhãn trước/sau và hash vẫn nằm trong
+`repair-changes.jsonl`, `label-cleanup-changes.jsonl` và các file provenance.
+Hai script sửa nhãn cũ cũng đã được dọn vì không còn snapshot đầu vào.
+Có thể xem code lịch sử trong commit `f8958e4`.
+Không dùng bộ v2 hiện tại làm đầu vào thay thế snapshot cũ.
 
-Tái lập từ snapshot (cần cài dependencies dự án):
+Tạo lại trang review từ bộ v2 hiện tại:
 
 ```bash
-.venv/bin/python scripts/repair_benchmark_v2.py
 .venv/bin/python scripts/review_benchmark_v2.py
-.venv/bin/ruff check scripts
 ```
 
-Script sửa từ chối ghi đè nếu có câu đã reviewed. Không chạy lại sau khi sửa tay
-nhãn chưa reviewed vì sẽ mất chỉnh sửa đó. Generator cũ đã được chặn khi có
-`repair-provenance.json`. V1 và các báo cáo benchmark cũ được giữ nguyên.
+Generator cũ đã được chặn khi có `repair-provenance.json` để tránh ghi đè nhãn.
 
 ## Cập nhật làm sạch nhãn
 
@@ -88,15 +88,12 @@ Trang review hiển thị mọi record nguồn của một ảnh, tránh che m�
 chỉ chọn record cuối. `source_record_ids` vẫn là lịch sử nguồn, có cả nguồn cách ly.
 
 Chi tiết ở `var/benchmark-v2/label-cleanup-notes.md`, thay đổi theo câu trong
-`label-cleanup-changes.jsonl`. Snapshot mới: `var/benchmark-v2-before-label-cleanup/`.
+`label-cleanup-changes.jsonl`. Snapshot trước làm sạch đã được dọn.
 Bước sửa cấu trúc cũ hiện bị chặn để không ghi đè nhãn đã làm sạch.
 
-```bash
-.venv/bin/python scripts/clean_benchmark_v2_labels.py
-.venv/bin/python scripts/review_benchmark_v2.py
-```
+Dùng bộ v2 đã lưu để xem/chấm lại. Code làm sạch cũ nằm trong lịch sử Git.
 
-Không chạy lại sau khi chỉnh tay nhãn chưa reviewed vì script đọc lại snapshot.
+Không chạy lại bước sửa nhãn trên bộ v2 đã chốt.
 Quy tắc này chưa giải quyết ảnh gần trùng khác bytes, metadata sai ở một entity
 đơn lẻ, hoặc độ đầy đủ của nhãn thị giác. Chưa có benchmark mới.
 
@@ -156,3 +153,12 @@ multi-hop đo tìm ảnh đích theo nhãn hiện có, chưa chứng minh suy lu
 kết quả truy vấn và 3.600 lượt đo, đủ câu trong chín trang ảnh. Kết quả kiểm tra:
 `verification.json`. Script tổng hợp: `scripts/summarize_all_v2.py`.
 Bản script chạy thực tế lưu tại `executed-script.py`, hash ở `experiment.json`.
+
+## Dọn artifact sau khi chốt v2
+
+Đã xóa contact sheet JPG dùng duyệt thủ công (gold-review-v2, hop-review, review),
+file thử model, log retry cũ và bản repair-summary trùng nội dung overview.
+Quyết định duyệt ảnh, danh sách image ID, change log, provenance và ảnh gốc vẫn giữ.
+`gold-review-v2/visual-items.json` vẫn giữ vì manifest tập reviewed lưu hash của file này.
+Không di chuyển các artifact còn lại vì manifest và HTML hiện tham chiếu đường dẫn đó.
+Sơ đồ thư mục hiện dùng xem `var/README.md` trên máy local.
