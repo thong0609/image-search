@@ -20,7 +20,7 @@ Bộ nhãn và quy tắc đánh giá nằm trong [tài liệu benchmark](docs/ba
 
 ## Scaffold hiện có
 
-Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. Phần tài liệu kiến trúc bên dưới xuất phát từ kế hoạch địa danh trước đây; hướng dẫn chạy ở `docs/baseline/`, đặc tả hệ thống ở `docs/design/`, kế hoạch sản phẩm ở `docs/planning/`.
+Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. hướng dẫn chạy ở `docs/baseline/`, đặc tả hệ thống ở `docs/design/`, kế hoạch sản phẩm ở `docs/planning/`.
 
 ## Cấu trúc
 
@@ -92,7 +92,7 @@ Route validate request và gọi use case; service chứa nghiệp vụ. Adapter
 
 ## Tài liệu
 
-- [Lộ trình giai đoạn](docs/planning/delivery-plan.md), [MVP địa danh](docs/planning/landmark-mvp-plan.md), [PRD](docs/planning/prd.md).
+- [Lộ trình giai đoạn](docs/planning/delivery-plan.md), [PRD](docs/planning/prd.md).
 - [Schema 9 bảng](docs/design/data-model.md), [hệ thống](docs/design/system-design.md), [API](docs/design/api-contract.md).
 - [Mục lục thiết kế](docs/README.md).
 

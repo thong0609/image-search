@@ -1,6 +1,6 @@
 # Yêu cầu sản phẩm MVP
 
-Trạng thái: bản nháp review v0.1. Phạm vi đã xác nhận được tách khỏi giả định và đề xuất trong [decisions.md](decisions.md).
+Trạng thái: yêu cầu sản phẩm để triển khai sau baseline v2; các API nghiệp vụ còn là thiết kế. Phạm vi đã xác nhận được tách khỏi giả định và đề xuất trong [decisions.md](decisions.md).
 
 Ràng buộc kỹ thuật đã xác nhận ngày 05/11/2026: Qdrant lưu vector và search metadata, tách biệt DB quan hệ; không dùng pgvector. DB quan hệ giữ nghiệp vụ/quyền và đã chọn PostgreSQL.
 
@@ -12,7 +12,7 @@ Cập nhật C13: schema SQL còn 9 bảng; các API import/item vẫn giữ tà
 
 Người dùng cần tìm ảnh phù hợp với mô tả trong kho riêng mà không phải nhớ tên file hoặc duyệt thủ công từng thư mục. Kết quả cần đủ liên quan để người dùng chọn được ảnh, có thể xem nguồn và xem toàn bộ ảnh đang hiển thị trong kho, không phân biệt tài khoản.
 
-MVP nhận văn bản tiếng Việt, tạm chọn địa danh để người dùng hình dung nơi đó; hỗ trợ single, multi-target và multi-hop (C14/C18). Chưa có dataset; bổ sung thu thập web có kiểm soát nhập vào kho trước search (C15). Quy mô 100k–1M là mục tiêu kiến trúc, thử local trước trên sample nhỏ; không giả định có sẵn caption/tags/OCR. Chi tiết [MVP địa danh](landmark-mvp-plan.md).
+Sản phẩm tìm ảnh bằng văn bản tiếng Việt trên kho ảnh có metadata. Baseline v2 đã chạy trên CSV hiện có với 1.886 ảnh và 400 câu single/multi-target/multi-hop; xem [kết quả baseline](../baseline/baseline-v2-results.md). Không giới hạn sản phẩm vào miền địa danh. Quy mô 100k–1M là mục tiêu kiến trúc cần kiểm chứng riêng.
 
 ## 2. Vai trò và hành trình
 
@@ -71,10 +71,10 @@ Feedback, ACL theo ảnh/collection, tìm bằng ảnh, ảnh + văn bản, craw
 
 ## 6. Trạng thái giao diện
 
-Hướng giao diện đã chọn: đơn giản như Google Images, nền trắng, search bar phía trên, filters gọn, lưới ảnh giữ tỷ lệ. Single target vào thẳng grid; multi-target dùng tiêu đề nhóm nhỏ. Chi tiết dùng panel phải trên desktop/toàn màn hình trên mobile sau kiểm tra login; multi-hop evidence mở khi cần. Trang tài khoản/admin có đường dẫn riêng. Frontend dùng Next.js/TypeScript, Tailwind, shadcn/ui, TanStack Query và fetch; cấu trúc/hành vi ở [kế hoạch MVP mục 7](landmark-mvp-plan.md#7-frontend-tối-giản).
+Hướng giao diện đã chọn: đơn giản như Google Images, nền trắng, search bar phía trên, filters gọn, lưới ảnh giữ tỷ lệ. Single target vào thẳng grid; multi-target dùng tiêu đề nhóm nhỏ. Chi tiết dùng panel phải trên desktop/toàn màn hình trên mobile sau kiểm tra login; multi-hop evidence mở khi cần. Trang tài khoản/admin có đường dẫn riêng. Frontend dùng Next.js/TypeScript, Tailwind, shadcn/ui, TanStack Query và fetch; hướng dẫn toolchain ở [frontend README](../../frontend/README.md).
 
-- Chưa tìm: ví dụ tiếng Việt về địa danh; phân biệt một target, nhiều targets và multi-hop.
-- Nhiều targets: hiển thị nhóm riêng với tên địa danh/ảnh và trạng thái thiếu ảnh; bằng chứng multi-hop là facts/source path, không chain-of-thought.
+- Chưa tìm: ví dụ tìm ảnh bằng tiếng Việt; phân biệt một target, nhiều targets và multi-hop.
+- Nhiều targets: hiển thị nhóm riêng với tên mục tiêu/ảnh và trạng thái thiếu ảnh; bằng chứng multi-hop là facts/source path, không chain-of-thought.
 - Đang tìm: giữ query và filters; hủy hoặc bỏ qua response của request cũ khi người dùng tìm lại.
 - Có kết quả: thumbnail tải lười, xem chi tiết, phân trang.
 - Rỗng: thông báo không có kết quả trong phạm vi; gợi ý nới filter hoặc mô tả lại. Không giả dạng lỗi dependency thành kết quả rỗng.

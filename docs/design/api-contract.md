@@ -198,31 +198,6 @@ Thêm field response tùy chọn được coi là tương thích; đổi nghĩa,
 
 C13 maintenance: tạo import/retry ghi, delete, metadata/fact updates và worker claims ngoài tập drain bị chặn khi writes_blocked; jobs trong tập drain bền vững được tiếp tục để hoàn tất barrier; API trả 503 MAINTENANCE_MODE có Retry-After, không nhận thao tác rồi âm thầm bỏ. Search có thể chạy trên config cũ trong build; khi search_blocked/cutover trả cùng lỗi bảo trì. Auth/account/detail/download tiếp tục nếu dependencies/version còn hợp lệ. Health/readiness phản ánh instance có phục vụ được search theo gate; liveness không fail chỉ vì bảo trì. Source_id/manifest_key được kiểm tra theo source config ref/hash đã đăng ký phía server, không yêu cầu bảng source.
 
-## 13. Truy vấn địa danh, nhiều mục tiêu và multi-hop
-
-C14–C18 bổ sung vào POST /v1/search các trường tùy chọn `mode` (auto mặc định, single, multi_target, multi_hop) và `results_per_target` (integer 1–5). Không gửi các trường mới vẫn hỗ trợ search duyệt thông thường; planner nhận diện nhiều targets khi có danh sách yêu cầu riêng như “ảnh Hạ Long, ảnh Cát Bà”. `limit` tiếp tục là kích thước trang 1–50, không quyết định số target hoặc số hops.
-
-Ví dụ request multi-target:
-
-```json
-{
-  "query": "Tìm ảnh Hạ Long, ảnh Cát Bà",
-  "mode": "multi_target",
-  "results_per_target": 1,
-  "limit": 20
-}
-```
-
-Planner đề xuất tối đa 5 targets, mỗi target resolve/place alias riêng. `results_per_target` mặc định 1 khi multi_target, hoặc suy từ yêu cầu số ảnh rõ ràng trong câu (ví dụ “cho tôi 1 ảnh Hạ Long”); count tường minh trong JSON và câu mâu thuẫn trả 422 INVALID_QUERY. Single/multi_hop không nêu count vẫn có thể duyệt theo limit như contract ban đầu. Multi-hop ở từng target là subplan graph, không bị mất khi query mode chính là multi_target. Các giới hạn này là thiết kế đề xuất cần kiểm thử bằng query thật.
-
-Thêm fields response tùy chọn `query_mode`, `groups`, `partial`. Top-level items vẫn là list ảnh đầy đủ với schema cũ, dedup theo image_id. Groups có target_id, label, resolved entity IDs, image_ids tham chiếu top-level items, status=ok/no_match/insufficient và evidence gồm entity IDs/predicates/source URLs hoặc source revision công khai phù hợp. Không trả object keys/secret hoặc chain-of-thought. Nếu một ảnh thuộc nhiều target đã xác minh, nhóm tham chiếu cùng ID; không nhân đôi top-level item. Client dùng groups để hiển thị đúng target thay vì coi thứ tự flat là quota từng nơi.
-
-Mỗi nhóm được lấy/rerank riêng trong budget chung request, tối đa 50 ảnh VLM/request theo cấu hình thử; không lấy top-2 của một embedding cả câu. Với count hữu hạn, snapshot chỉ giữ số ảnh đã chọn cho mỗi target, không thêm tail vượt count; nếu tất cả kết quả vừa trang đầu thì next_cursor=null. Khi nhiều trang, nhóm chỉ liệt kê IDs thuộc trang hiện tại, còn statuses/counts cuối lấy từ query_plan snapshot; cursor giữ group membership và vị trí, không rerank lại.
-
-partial=true nếu có nhóm no_match/insufficient trong khi nhóm khác có ảnh; không bù bằng ảnh của nơi khác. Nếu mọi nhóm không có ảnh hợp lệ thì items=[], groups có trạng thái rỗng, next_cursor=null, HTTP 200 và partial=false. Thiếu ảnh hợp lệ không đồng nghĩa degraded; lỗi dependency vẫn theo strict/fallback trước đó, không chuyển thành nhóm no_match. Entity mơ hồ không giải được trả 422 INVALID_QUERY có target_id trong details; chưa chọn entity thì không gán no_match tùy tiện.
-
-Search_sessions lưu query_plan JSON (mode, target IDs/labels/entities, counts/statuses/evidence refs) và items JSON với target_ids, giữ config_id/graph_revision và expires_at. Không tạo bảng query/target/result riêng. Query nhạy cảm và evidence retention vẫn theo Q09. Multi-hop evidence/path phải khớp graph revision đã chụp, được final-check sau VLM; không tự thêm facts từ trí nhớ model.
-
 ## 14. Crawl nguồn web — admin
 
 Đề xuất POST /v1/admin/crawls cần admin và Idempotency-Key, body source_id, seed_entity_ids/category IDs theo source config, max_images và collection_id. Source/prefix/download host, quota/rate và accept rules lấy từ config server; không nhận URL bất kỳ hoặc graph query. Đề xuất max_images 1–1.500 cho đợt sample, source adapter có thể giới hạn thấp hơn. Request hợp lệ trả 202 request_id/crawl_id/status_url; crawl_id là jobs.id type crawl.

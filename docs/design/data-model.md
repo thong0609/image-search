@@ -138,7 +138,6 @@ C18 query_plan giữ mode/targets/counts/statuses và evidence refs; target_ids 
 
 Đánh đổi C13: ít bảng hơn nhưng cần validate JSON/job types trong ứng dụng, source administration qua cấu hình, reindex có maintenance window và chưa hỗ trợ nhiều generation ghi song song. Giữ 9 bảng này làm schema hiện hành; sơ đồ chi tiết cũ 24 bảng đã được thay thế, đã có migration schema ban đầu, chưa có dữ liệu thực tế để chuyển đổi.
 
-C14–C18: FastAPI/PostgreSQL đã chọn. Source type đề xuất private hoặc web_import theo source config, pin external ID/version, original page/media URLs và attribution vào snapshots/Qdrant payload. Crawl root/result lưu manifest_ref/import_id, items/jobs không chứa toàn bộ HTML hoặc ảnh; external web data được sanitize/validate trước inference/hiển thị. Metadata địa danh và local resource budget ở [MVP địa danh](../planning/landmark-mvp-plan.md).
 
 
 ## Qdrant
@@ -200,7 +199,6 @@ Ví dụ payload, không phải toàn bộ request upsert; vector không xuất 
 }
 ```
 
-C14–C18 bổ sung payload source_type=web_import cho ảnh web đã nhập kho (private vẫn hợp lệ), description/source_description/description_vi nullable, place_ids/aliases và provenance/attribution theo [MVP địa danh](../planning/landmark-mvp-plan.md). Chỉ index description/title/tags thực sự dùng lexical; relations/facts vẫn ở graph artifacts, không thêm SQL table.
 
 Không lưu secret, signed URL, mật khẩu/access hoặc refresh token hoặc raw user query trong payload. Object keys do catalog quản lý; API xác thực khi cấp preview/download URL. Thumbnail là public ở mức sản phẩm. Caption/OCR chỉ thêm khi có pipeline, provenance và phiên bản rõ ràng. Lifecycle nếu mirror vào payload chỉ là tín hiệu tối ưu, không phải nguồn quyết định xóa hoặc trạng thái tài khoản.
 
