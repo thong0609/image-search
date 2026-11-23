@@ -15,12 +15,12 @@ uv run --extra baseline image-search-baseline download --limit 20
 
 Ảnh và kết quả được lưu trong `var/`, ngoài Git. Bỏ `--limit` để tải toàn bộ;
 chạy lại để tiếp tục và thử lại URL lỗi. Đọc các bước còn lại trong
-[hướng dẫn chạy baseline](docs/baseline-usage.md), gồm bước sửa query/đáp án trước khi đo.
-Các yêu cầu đánh giá nằm trong [kế hoạch baseline](docs/baseline-plan.md).
+[hướng dẫn chạy baseline](docs/baseline/baseline-usage.md), gồm bước sửa query/đáp án trước khi đo.
+Bộ nhãn và quy tắc đánh giá nằm trong [tài liệu benchmark](docs/baseline/benchmark-design.md).
 
 ## Scaffold hiện có
 
-Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. Phần tài liệu kiến trúc bên dưới xuất phát từ kế hoạch địa danh trước đây; hướng dẫn baseline được giữ tại `docs/baseline-plan.md` để tự triển khai lại.
+Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. Phần tài liệu kiến trúc bên dưới xuất phát từ kế hoạch địa danh trước đây; hướng dẫn chạy ở `docs/baseline/`, đặc tả hệ thống ở `docs/design/`, kế hoạch sản phẩm ở `docs/planning/`.
 
 ## Cấu trúc
 
@@ -92,8 +92,8 @@ Route validate request và gọi use case; service chứa nghiệp vụ. Adapter
 
 ## Tài liệu
 
-- [Lộ trình giai đoạn](docs/delivery-plan.md), [MVP địa danh](docs/landmark-mvp-plan.md), [PRD](docs/prd.md).
-- [Schema 9 bảng](docs/data-model.md), [hệ thống](docs/system-design.md), [API](docs/api-contract.md).
+- [Lộ trình giai đoạn](docs/planning/delivery-plan.md), [MVP địa danh](docs/planning/landmark-mvp-plan.md), [PRD](docs/planning/prd.md).
+- [Schema 9 bảng](docs/design/data-model.md), [hệ thống](docs/design/system-design.md), [API](docs/design/api-contract.md).
 - [Mục lục thiết kế](docs/README.md).
 
 Baseline hiện dùng encoder CPU, tìm kiếm cosine chính xác và không cần VLM API.

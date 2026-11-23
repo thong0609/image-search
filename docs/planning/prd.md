@@ -16,7 +16,7 @@ MVP nhận văn bản tiếng Việt, tạm chọn địa danh để người d�
 
 ## 2. Vai trò và hành trình
 
-Có tài khoản, login/logout bằng access token + refresh token, không dùng session đăng nhập; có phân quyền chức năng. Ba vai trò visitor/user/admin đã chốt theo [thiết kế xác thực](auth-design.md). Khách tìm/xem thumbnail không cần login; detail và download cần login; mọi tài khoản có cùng phạm vi toàn kho. Chính sách truy cập này đã được xác nhận qua Q11.
+Có tài khoản, login/logout bằng access token + refresh token, không dùng session đăng nhập; có phân quyền chức năng. Ba vai trò visitor/user/admin đã chốt theo [thiết kế xác thực](../design/api-contract.md#auth). Khách tìm/xem thumbnail không cần login; detail và download cần login; mọi tài khoản có cùng phạm vi toàn kho. Chính sách truy cập này đã được xác nhận qua Q11.
 
 | Vai trò | Nhu cầu | Quyền |
 | --- | --- | --- |

@@ -112,7 +112,7 @@ Qdrant và graph là hai projection dẫn xuất. DB quan hệ vẫn là nguồn
 
 Delete commit tombstone ngay; purge mọi Qdrant point và graph image node/cạnh gắn ảnh ở mọi generation, kể cả staging. Không xóa shared entity còn được ảnh khác tham chiếu; giữ provenance nguồn shared relations. Không báo purge complete khi writer cũ còn có thể ghi trễ. Reconcile phát hiện graph orphan, thiếu projection, hash/version lệch, dangling edge và graph pointer chưa publish. Final checks vẫn bắt buộc dù graph payload có cờ active.
 
-search_configs gắn encoder/vector generation, graph generation/schema/linker revision, fusion và VLM thành một row cấu hình đọc. Đổi encoder hoặc graph schema dùng generation mới qua maintenance: chặn/drain ghi, backfill trên dữ liệu đứng yên, kiểm chứng và cutover active config nguyên tử; chưa hỗ trợ dual-write/catch-up online. Đổi riêng VLM/prompt có thể tái sử dụng indices tương thích, nhưng activation phải lấy graph manifest/revision hiện hành và vô hiệu hóa snapshots cũ. Rollback trực tiếp chỉ khi index cũ còn khớp catalog/facts, nếu không phải rebuild trong maintenance. Không có distributed transaction giữa các store. Schema 9 bảng ở [data-model.md](data-model.md).
+search_configs gắn encoder/vector generation, graph generation/schema/linker revision, fusion và VLM thành một row cấu hình đọc. Đổi encoder hoặc graph schema dùng generation mới qua maintenance: chặn/drain ghi, backfill trên dữ liệu đứng yên, kiểm chứng và cutover active config nguyên tử; chưa hỗ trợ dual-write/catch-up online. Đổi riêng VLM/prompt có thể tái sử dụng indices tương thích, nhưng activation phải lấy graph manifest/revision hiện hành và vô hiệu hóa snapshots cũ. Rollback trực tiếp chỉ khi index cũ còn khớp catalog/facts, nếu không phải rebuild trong maintenance. Không có distributed transaction giữa các store. Schema 9 bảng ở [mô hình dữ liệu](data-model.md).
 
 ## 6. Lỗi và suy giảm
 
@@ -129,7 +129,7 @@ Mặc định cấu hình đầy đủ là strict: dependency unavailable trả 
 | Graph và VLM cùng fallback | degradation_reason=MULTIPLE_COMPONENT_FAILURES; chi tiết từng lỗi lưu server-side theo request_id |
 | Catalog hoặc Qdrant không đọc được | Fail; không có đường fallback giữ bảo đảm lifecycle/metadata |
 
-Không fallback khi không thể kiểm chứng hard constraint hoặc image lifecycle. Không dùng lỗi dependency làm kết quả rỗng. Nhánh keyword và vector cũng có required/optional policy tường minh theo [API contract](api-contract.md) và benchmark trong [lộ trình triển khai](delivery-plan.md).
+Không fallback khi không thể kiểm chứng hard constraint hoặc image lifecycle. Không dùng lỗi dependency làm kết quả rỗng. Nhánh keyword và vector cũng có required/optional policy tường minh theo [API contract](api-contract.md) và benchmark trong [lộ trình triển khai](../planning/delivery-plan.md).
 
 ## 7. Đánh giá và điều kiện triển khai
 
@@ -141,7 +141,7 @@ Integration tests khi triển khai: entity trùng tên/alias, cycle/fan-out budg
 
 ## 8. Profile địa danh local và nhiều targets
 
-C14–C18: dùng Place/AdministrativeArea/PlaceType với image depicts place, located_in, part_of và instance_of có evidence/revision; [MVP địa danh](landmark-mvp-plan.md) định nghĩa metadata/nguồn và query modes. Với profile này hop budget facts ban đầu là 2; cạnh image depicts dùng lấy ảnh và không tính vào 2 bước suy luận, tổng path có thể 3 cạnh. Ghi rõ cách đếm vào graph_config để fixtures/benchmark nhất quán.
+C14–C18: dùng Place/AdministrativeArea/PlaceType với image depicts place, located_in, part_of và instance_of có evidence/revision; [MVP địa danh](../planning/landmark-mvp-plan.md) định nghĩa metadata/nguồn và query modes. Với profile này hop budget facts ban đầu là 2; cạnh image depicts dùng lấy ảnh và không tính vào 2 bước suy luận, tổng path có thể 3 cạnh. Ghi rõ cách đếm vào graph_config để fixtures/benchmark nhất quán.
 
 “Hạ Long, Cát Bà” tạo hai target plans và nhóm kết quả riêng. Mỗi target retrieval/fusion/rerank riêng nhưng chia chung node/candidate/deadline/API usage budget request. Giữ group membership trong query_plan/items JSON. Graph facts không tự tạo từ VLM captions; tên hành chính/aliases được kiểm chứng theo source revision, không hard-code địa giới.
 

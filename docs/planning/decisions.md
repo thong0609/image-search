@@ -28,7 +28,7 @@ Trạng thái ngày 06/11/2026. “Đã xác nhận” chỉ dùng cho thông ti
 
 ## 2. ADR và trạng thái
 
-ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; engine, checkpoint và cấu hình cụ thể chưa chốt. Chi tiết ở [thiết kế Qdrant](qdrant-design.md).
+ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; engine, checkpoint và cấu hình cụ thể chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).
 
 | ID | Lựa chọn | Phương án thay thế | Lý do và đánh đổi | Điều kiện xem lại |
 | --- | --- | --- | --- | --- |

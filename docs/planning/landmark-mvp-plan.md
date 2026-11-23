@@ -91,7 +91,7 @@ Thử rerank shortlist 5–10 ảnh cho query trả 1 ảnh/target; window thự
 
 Không thêm bảng crawl/place/entity. Crawl dùng jobs types crawl/crawl_item/fetch_media, manifest/output artifacts rồi chuyển vào import jobs hiện có; facts/aliases nằm trong graph artifacts và Qdrant metadata. Crawl import là hai bước tách checkpoint: crawl root.result giữ import_id; counts crawl là discovered/accepted/downloaded/rejected, counts import vẫn từ import_item. Không dùng số downloaded thay số searchable.
 
-Search_sessions thêm query_plan JSON chứa mode, targets/aliases/resolved entity IDs, requested counts và evidence refs; items có target_ids để snapshot giữ grouping. Định nghĩa contract ở [api-contract.md](api-contract.md). Evidence lưu tối thiểu theo retention, không ghi chain-of-thought. Giữ config/graph revision và final-check như trước.
+Search_sessions thêm query_plan JSON chứa mode, targets/aliases/resolved entity IDs, requested counts và evidence refs; items có target_ids để snapshot giữ grouping. Định nghĩa contract ở [hợp đồng API](../design/api-contract.md). Evidence lưu tối thiểu theo retention, không ghi chain-of-thought. Giữ config/graph revision và final-check như trước.
 
 Trình tự đề xuất cho một người: dựng scaffold FastAPI/PostgreSQL/Qdrant và tests fixtures → một source adapter + sample nhỏ → single target → multi-target → graph facts/multi-hop → VLM rerank/ablation toàn pipeline → load/restore/deploy. Graph và VLM vẫn thuộc phạm vi đầy đủ, chỉ chia thứ tự triển khai để kiểm chứng từng phần. Scaffold Next.js nằm trong phase 0; phase 3 bắt đầu màn hình tìm kiếm theo mục 7. API docs/CLI dùng để thử pipeline trước khi có UI nghiệp vụ.
 

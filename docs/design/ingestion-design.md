@@ -2,7 +2,7 @@
 
 Trạng thái: đề xuất cho kho riêng 100k–1M ảnh. Liên quan FR05, FR06, FR08 và NFR05.
 
-Cập nhật 05/11/2026: Qdrant lưu vector và payload metadata; DB quan hệ giữ jobs, outbox và pointer công bố. Quy trình cross-store theo [thiết kế Qdrant](qdrant-design.md).
+Cập nhật 05/11/2026: Qdrant lưu vector và payload metadata; DB quan hệ giữ jobs, outbox và pointer công bố. Quy trình cross-store theo [thiết kế Qdrant](data-model.md#qdrant).
 
 Cập nhật 06/11/2026: nhập liệu dựng cả Qdrant và graph projection; VLM rerank chạy online sau retrieval, không bắt buộc VLM caption/extraction toàn kho. Quy tắc graph artifacts, shared relations và publish ở [graph và reranking](graph-reranking-design.md).
 
@@ -88,7 +88,7 @@ C13 parser/retry: source definitions là cấu hình versioned, pin ref/hash tro
 
 ## 8. Nhập nguồn web địa danh
 
-C15 bổ sung acquisition có kiểm soát trước import: admin chọn source/seed đã đăng ký → jobs crawl/crawl_item/fetch_media → lưu metadata/facts/source revisions/attribution → validate quyền/nguồn và image–place link → download giới hạn, hash/dedup → manifest bất biến → import pipeline như trên. Crawl root.result ghi import_id để truy tiến độ publish; downloaded không đồng nghĩa searchable. Giữ 9 bảng SQL. Single developer dùng một nguồn trước; Wikimedia Commons/Wikidata là đề xuất ở [MVP địa danh](landmark-mvp-plan.md).
+C15 bổ sung acquisition có kiểm soát trước import: admin chọn source/seed đã đăng ký → jobs crawl/crawl_item/fetch_media → lưu metadata/facts/source revisions/attribution → validate quyền/nguồn và image–place link → download giới hạn, hash/dedup → manifest bất biến → import pipeline như trên. Crawl root.result ghi import_id để truy tiến độ publish; downloaded không đồng nghĩa searchable. Giữ 9 bảng SQL. Single developer dùng một nguồn trước; Wikimedia Commons/Wikidata là đề xuất ở [MVP địa danh](../planning/landmark-mvp-plan.md).
 
 Nguồn private không đổi contract manifest/object allowlist; source config web_import bổ sung API/media host/redirect/DNS allowlist, User-Agent/contact, rate/backoff và quota. Không nhận tùy ý URL từ user; fetch không được truy cập private/link-local/local services. Metadata nguồn HTML được sanitize; không coi HTML/prompt trong metadata là lệnh cho worker/VLM. Lưu snapshot nguyên bản có giới hạn và normalized metadata theo version ngoài Git.
 

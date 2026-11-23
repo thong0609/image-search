@@ -221,3 +221,13 @@ quan hệ multi-hop hay bảo đảm đủ mọi mục tiêu.
 
 Tham khảo thuật toán: [BM25 trong Elasticsearch](https://www.elastic.co/docs/reference/elasticsearch/index-settings/similarity),
 [RRF trong Azure AI Search](https://learn.microsoft.com/en-us/azure/search/hybrid-search-ranking).
+
+
+## Quy tắc dữ liệu
+
+CSV phải có metadata bắt buộc; chỉ nhận `approve` đúng chuỗi `yes`.
+Giữ nguyên nguồn và record ID để truy vết. Tải ảnh public HTTP(S) có giới hạn,
+kiểm tra giải mã, dùng SHA-256 bytes làm image ID và hỗ trợ chạy tiếp.
+Ảnh tải lỗi không trở thành ví dụ không có đáp án. Giữ nhãn đánh giá riêng khỏi
+đầu vào retrieval; chia nhóm entity/alias/ảnh trùng trước khi chốt dev/test.
+Mỗi lần thay corpus hoặc nhãn cần phiên bản benchmark mới.
