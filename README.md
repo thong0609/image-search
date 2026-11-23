@@ -1,6 +1,26 @@
 # Images-search
 
-Tìm ảnh địa danh tiếng Việt bằng vector + keyword + graph và VLM rerank. Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau.
+Baseline chạy bằng CLI: CSV → tải ảnh → nhãn đánh giá → vector → tìm kiếm → báo cáo.
+Giữ scaffold API/frontend, migration và các adapter hạ tầng để phát triển sau.
+
+## Chạy baseline
+
+Không cần Docker cho baseline. Cài Python 3.12 và uv, sau đó:
+
+```bash
+uv sync --frozen --extra baseline
+uv run --extra baseline image-search-baseline prepare data/general_10m_part_02_18-11-2026_CHIEU_To_Huy_Thong.csv
+uv run --extra baseline image-search-baseline download --limit 20
+```
+
+Ảnh và kết quả được lưu trong `var/`, ngoài Git. Bỏ `--limit` để tải toàn bộ;
+chạy lại để tiếp tục và thử lại URL lỗi. Đọc các bước còn lại trong
+[hướng dẫn chạy baseline](docs/baseline-usage.md), gồm bước sửa query/đáp án trước khi đo.
+Các yêu cầu đánh giá nằm trong [kế hoạch baseline](docs/baseline-plan.md).
+
+## Scaffold hiện có
+
+Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. Phần tài liệu kiến trúc bên dưới xuất phát từ kế hoạch địa danh trước đây; hướng dẫn baseline được giữ tại `docs/baseline-plan.md` để tự triển khai lại.
 
 ## Cấu trúc
 
@@ -8,8 +28,12 @@ Tìm ảnh địa danh tiếng Việt bằng vector + keyword + graph và VLM re
 - `src/image_search/modules/`: search, crawling, catalog, ingestion, graph, auth, jobs; nghiệp vụ giao tiếp với hệ ngoài qua ports.
 - `src/image_search/adapters/`: PostgreSQL, Qdrant, local object storage; graph/embedding/VLM có chỗ mở rộng.
 - `src/image_search/main.py`: app factory và wiring dependencies; `config.py`: cấu hình môi trường.
+- `src/image_search/baseline/`: pipeline baseline độc lập; `cli.py` nhận lệnh,
+  `records.py` đọc CSV, `download.py` tải ảnh, `benchmark.py` quản lý bộ nhãn,
+  `vectors.py` tạo index/tìm kiếm, `keyword.py` tìm BM25 và gộp RRF,
+  `evaluate.py` chấm điểm, `utils.py` đọc/ghi file
+  và thông tin lần chạy, `settings.py` chứa class `BaselineSettings` đọc cấu hình từ `.env`.
 - `migrations/`: Alembic, migration đầu tạo 9 bảng ứng dụng (Alembic thêm bảng version riêng).
-- `configs/`: cấu hình nguồn ví dụ, crawler mặc định tắt.
 - `assets/sample-images/`: fixture PPM tự tạo 2×2, không dùng ảnh riêng.
 - `tests/`: unit và integration; `var/`: dữ liệu local ngoài Git.
 
@@ -72,7 +96,9 @@ Route validate request và gọi use case; service chứa nghiệp vụ. Adapter
 - [Schema 9 bảng](docs/data-model.md), [hệ thống](docs/system-design.md), [API](docs/api-contract.md).
 - [Mục lục thiết kế](docs/README.md).
 
-Chưa có dataset/crawl/model thực tế. Local ban đầu dùng encoder CPU và VLM API ở phase tương ứng; Intel RAM chia sẻ 16 GB không được coi là VRAM dedicated. Ngân sách và checkpoint vẫn cần chốt.
+Baseline hiện dùng encoder CPU, tìm kiếm cosine chính xác và không cần VLM API.
+Intel RAM chia sẻ 16 GB không được coi là VRAM dedicated. Chất lượng model cần được đo
+trên bộ nhãn đã xác nhận; xem hướng dẫn baseline để đổi checkpoint và tạo index mới.
 
 
 ## Frontend phase 0

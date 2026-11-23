@@ -1,11 +1,15 @@
 # Tài liệu dự án
 
-Bộ tài liệu này mô tả dự án tìm ảnh địa danh bằng tiếng Việt. Đã có scaffold phase 0 và migration; nghiệp vụ tìm kiếm, dataset, crawler và benchmark chưa được triển khai. Cách cài/chạy/kiểm tra hiện hành ở [README dự án](../README.md).
+Pipeline baseline mới đã có CLI; xem [hướng dẫn chạy](baseline-usage.md) và
+[kế hoạch baseline](baseline-plan.md). Giữ scaffold API/frontend và tài liệu thiết kế.
+Cách chạy scaffold ở [README dự án](../README.md).
 
 ## Đọc theo nhu cầu
 
 | Tài liệu | Nội dung |
 |---|---|
+| [Chạy baseline](baseline-usage.md) | Lệnh CLI, sửa nhãn, tạo index và đọc báo cáo |
+| [Kế hoạch baseline](baseline-plan.md) | Các bước hướng dẫn để tự triển khai pipeline |
 | [Kế hoạch MVP địa danh](landmark-mvp-plan.md) | Phạm vi, crawler, metadata, query modes, frontend và giả định local |
 | [PRD](prd.md) | Yêu cầu sản phẩm và tiêu chí chấp nhận |
 | [Lộ trình triển khai](delivery-plan.md) | Các giai đoạn BE/FE, đầu ra và điều kiện hoàn tất |

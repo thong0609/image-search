@@ -8,6 +8,8 @@ var/
 dist/
 *.egg-info/
 
+data/
+
 node_modules/
 .next/
 *.tsbuildinfo
