@@ -4,7 +4,7 @@ Tìm ảnh bằng câu tiếng Việt trên kho riêng (1.886 ảnh có metadata
 tiêu và nơi chứa, xác định nơi chứa qua Neo4j hoặc qua ảnh khác, rồi tìm bằng vector SigLIP2 + BM25 gộp
 RRF. Kết quả luôn là danh sách ảnh cho từng mục tiêu.
 
-Trạng thái: luồng tìm kiếm và playground local đã chạy; reranking, website production và đăng nhập chưa có.
+Trạng thái: luồng tìm kiếm và màn hình tìm ảnh local đã chạy; reranking, đăng nhập và quản trị chưa có.
 Xem [lộ trình](docs/planning/delivery-plan.md) và [kết quả đo](docs/evaluation/results.md).
 
 ## Cài đặt
@@ -26,7 +26,7 @@ docker compose --profile graph up -d qdrant neo4j
 2. [Nhập graph](docs/guides/graph.md).
 3. [Tìm kiếm và đánh giá](docs/guides/search.md).
 
-Playground:
+Màn hình tìm ảnh ở `/`, công cụ xem từng bước ở `/playground`:
 
 ```bash
 HF_HUB_OFFLINE=1 uv run uvicorn image_search.main:app --host 127.0.0.1 --port 8000
@@ -38,7 +38,8 @@ cd frontend && cp .env.example .env.local && npm ci && npm run dev   # http://12
 ```text
 src/image_search/
   main.py, config.py, health.py   ứng dụng FastAPI, cấu hình, readiness
-  playground.py, api/v1/          API playground và health
+  search.py, playground.py        dịch vụ tìm ảnh, xem từng bước
+  api/v1/                         API tìm ảnh, playground, health
   planner/                        prompt, phân tích câu, kế hoạch
   retrieval/                      engine, executor, danh sách kết quả, BM25
   embedding/                      encoder SigLIP2 và index ảnh
@@ -48,13 +49,13 @@ src/image_search/
   worker.py, smoke.py             scaffold cho giai đoạn sau
 scripts/                          đánh giá retrieval và route planner
 migrations/                       schema PostgreSQL (Alembic)
-frontend/                         Next.js playground
+frontend/                         Next.js: màn hình tìm ảnh và playground
 tests/                            unit, integration, fixtures
 docs/                             hướng dẫn, thiết kế, đánh giá, kế hoạch
 data/, var/                       dữ liệu và artifact local, ngoài Git
 ```
 
-PostgreSQL, migration, worker và object storage là scaffold cho website; luồng tìm kiếm và playground
+PostgreSQL, migration, worker và object storage là scaffold cho website; luồng tìm kiếm và giao diện
 không cần chúng:
 
 ```bash

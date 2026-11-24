@@ -33,6 +33,7 @@ Cập nhật sau baseline v2: dùng dataset CSV hiện có, đã chốt baseline
 | C25 | Planner chỉ phân tích điều kiện thuộc ảnh hay nơi chứa; code suy ra dependency và route | Người dùng ngày 25/11/2026 |
 | C26 | Thêm visual bridge, thay quyết định không suy nơi chứa từ ảnh; `LOCATED_IN` bắc cầu; nơi graph xác nhận được ưu tiên khi điểm kém không quá 10% | Người dùng ngày 25/11/2026 |
 | C27 | Kiểu Google Images: luôn trả danh sách ảnh, không từ chối; không khớp thì tìm cả câu; multi-target tạm giữ nhóm; số ảnh trong câu không cắt danh sách | Người dùng ngày 25/11/2026 |
+| C28 | Làm trước một màn hình demo tìm ảnh, lấy ý tưởng Google Images; chưa cần vai trò admin. Tối ưu độ trễ planner (mốc p90 ≤ 300 ms) tạm gác | Người dùng ngày 25/11/2026 |
 
 ## 2. ADR và trạng thái
 

@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import "./globals.css";
 export const metadata: Metadata = {
-  title: "Images Search",
-  description: "Thử planner và tìm kiếm ảnh trên dataset bằng tiếng Việt",
+  title: "Tìm ảnh",
+  description: "Tìm ảnh bằng câu tiếng Việt",
 };
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

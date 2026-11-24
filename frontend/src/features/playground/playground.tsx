@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { apiRequest, ApiError } from "@/lib/api/client";
 import type { RunResult, Step } from "./types";
+import "./playground.css";
 
 const examples = [
   {

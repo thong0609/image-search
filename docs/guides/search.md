@@ -47,13 +47,29 @@ uv run python scripts/evaluate_retrieval.py var/retrieval-new --queries <queries
 uv run python scripts/evaluate_planner_routes.py tests/fixtures/planner-scope-cases.jsonl --split dev --rounds 3 --output-dir var/routes-new
 ```
 
-## Playground
+## Giao diện
 
 ```bash
 HF_HUB_OFFLINE=1 uv run uvicorn image_search.main:app --host 127.0.0.1 --port 8000
 cd frontend && npm run dev   # http://127.0.0.1:3000
 ```
 
-Chọn **Chỉ planner** hoặc **Planner + tìm ảnh**; mỗi lần chạy gọi OpenAI. Model và index nạp ở lần
-tìm ảnh đầu tiên. Không cần PostgreSQL. Đây là công cụ local, không phải website production; chi tiết
-ở [frontend/README](../../frontend/README.md).
+- `/`: nhập câu hỏi, xem lưới ảnh theo từng mục tiêu, bấm ảnh để xem chi tiết và trang nguồn. Câu nằm
+  trong URL (`?q=`). Mỗi câu mới gọi OpenAI; quay lại câu cũ dùng kết quả đã có trong trình duyệt.
+- `/playground`: xem kế hoạch, token và thời gian từng bước.
+- Model và index nạp ở lượt tìm đầu tiên (khoảng 10 giây thêm). Không cần PostgreSQL. Chưa có đăng nhập
+  hoặc quản trị; chỉ chạy local.
+
+### API
+
+| Endpoint | Nội dung |
+|---|---|
+| `POST /v1/search` | `{"query": "..."}`, 1–500 ký tự |
+| `GET /v1/images/{id}` | Ảnh gốc trong corpus |
+| `GET /v1/images/{id}/thumbnail` | Ảnh thu nhỏ tối đa 640×480, tạo khi cần ở `var/objects/thumbnails/` |
+| `POST /v1/playground/run` | Công cụ xem từng bước |
+
+`/v1/search` trả `groups` (mỗi mục tiêu: `label`, `approximate`, `items` gồm `id`, `title`, `caption`,
+kích thước, `source_url`, `source_name`), `question` khi cần làm rõ, `planned=false` khi planner lỗi và
+chỉ tìm bằng nguyên câu. Lỗi hạ tầng trả 503, không lộ chi tiết. Đây là bản demo, rút gọn so với
+[đặc tả API](../design/api-contract.md): chưa có bộ lọc, phân trang và đăng nhập.
