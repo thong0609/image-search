@@ -122,3 +122,28 @@ Artifact local: `var/planner-v1/dev/report.json`, `report.md`, `review.html`,
 `review-notes.md`; run ghi hash prompt/code/input, usage và kết quả từng câu.
 Các artifact và key `.env` không đưa vào Git. Prompt được lưu trực tiếp trong
 `src/image_search/planner/router.py`, có version và SHA-256 trong mỗi lần chạy.
+
+
+## Prompt planner-v2
+
+Prompt hiện tại bổ sung thứ tự quyết định route, ví dụ đối lập cùng ảnh/nhiều mục tiêu/
+bridge, giữ đầy đủ entity mention, phân biệt số ảnh và số đối tượng, hỏi lại khi mâu thuẫn.
+Chỉ thay prompt; giữ model/settings/nhãn/scorer như v1. Trên 30 câu dev:
+
+| Chỉ số | V1 | V2 |
+|---|---:|---:|
+| Route | 80% | 100% |
+| Single | 9/9 | 9/9 |
+| Multi-target | 9/9 | 9/9 |
+| Multi-hop | 4/9 | 9/9 |
+| Unclear | 2/3 | 3/3 |
+| Toàn plan exact-match | 53,3% | 80% |
+| p90 planner | 25,87 giây | 29,22 giây |
+
+Đây là kết quả dev dùng chỉnh prompt, chưa phải holdout độc lập. Test chưa chạy.
+Còn regression count ở q040: model tự gán 1 khi người dùng không nêu số ảnh.
+Các ca lệch conditions cần kiểm tra thủ công vì scorer exact-match và nhãn mẫu còn
+thiếu/khác cách chia cụm. SLO p90 toàn pipeline < 300 ms vẫn không đạt.
+
+Artifact: `var/planner-v2/dev/comparison.md`, `review.html`, `review-notes.md` và
+`verification.json`. Kết quả v1 giữ nguyên; prompt v1 đã lưu trong commit `eceadae`.
