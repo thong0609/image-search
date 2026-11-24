@@ -55,7 +55,8 @@ cd frontend && npm run dev   # http://127.0.0.1:3000
 ```
 
 - `/`: nhập câu hỏi, xem lưới ảnh theo từng mục tiêu, bấm ảnh để xem chi tiết và trang nguồn. Câu nằm
-  trong URL (`?q=`). Mỗi câu mới gọi OpenAI; quay lại câu cũ dùng kết quả đã có trong trình duyệt.
+  trong URL (`?q=`). Câu mới gọi OpenAI; câu đã hỏi dùng lại
+  [kế hoạch trong cache](../design/search-pipeline.md#cache-kế-hoạch) của backend.
 - `/playground`: xem kế hoạch, token và thời gian từng bước.
 - Model và index nạp ở lượt tìm đầu tiên (khoảng 10 giây thêm). Không cần PostgreSQL. Chưa có đăng nhập
   hoặc quản trị; chỉ chạy local.
@@ -71,5 +72,5 @@ cd frontend && npm run dev   # http://127.0.0.1:3000
 
 `/v1/search` trả `groups` (mỗi mục tiêu: `label`, `approximate`, `items` gồm `id`, `title`, `caption`,
 kích thước, `source_url`, `source_name`), `question` khi cần làm rõ, `planned=false` khi planner lỗi và
-chỉ tìm bằng nguyên câu. Lỗi hạ tầng trả 503, không lộ chi tiết. Đây là bản demo, rút gọn so với
+chỉ tìm bằng nguyên câu. `plan_cached=true` khi dùng lại kế hoạch của câu đã hỏi. Lỗi hạ tầng trả 503, không lộ chi tiết. Đây là bản demo, rút gọn so với
 [đặc tả API](../design/api-contract.md): chưa có bộ lọc, phân trang và đăng nhập.

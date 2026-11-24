@@ -37,6 +37,7 @@ class SearchResponse(BaseModel):
     query: str
     question: str | None = Field(description="Câu hỏi làm rõ; khi có thì groups rỗng")
     planned: bool = Field(description="False khi planner lỗi và chỉ tìm bằng nguyên câu")
+    plan_cached: bool = Field(description="Dùng lại kế hoạch của câu đã hỏi, không gọi model")
     groups: list[SearchGroup]
     took_ms: float
 

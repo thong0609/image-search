@@ -17,6 +17,7 @@ export type SearchResponse = {
   query: string;
   question: string | null;
   planned: boolean;
+  plan_cached: boolean;
   groups: SearchGroup[];
   took_ms: number;
 };

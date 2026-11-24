@@ -9,6 +9,7 @@ from threading import Lock
 
 from PIL import Image, ImageOps
 
+from image_search.planner.cache import PlanCache, normalize_query
 from image_search.planner.schemas import QueryPlan
 from image_search.planner.settings import PlannerSettings
 
@@ -23,6 +24,7 @@ class SearchService:
         self.engine = None
         self.encoder = None
         self.images = {}
+        self.plans = PlanCache(PlannerSettings().cache_size)
 
     def load(self, needs_encoder=True):
         from image_search.embedding.settings import EmbeddingSettings
@@ -39,20 +41,26 @@ class SearchService:
             self.encoder = Siglip2Embedding(embedding)
 
     def plan(self, text):
-        """Kế hoạch của planner, None nếu planner không dùng được."""
-        from image_search.planner.router import make_client, route_query
+        """(Kế hoạch hoặc None nếu planner không dùng được, có lấy từ cache không)."""
+        from image_search.planner.router import PROMPT, make_client, route_query
 
         settings = PlannerSettings()
-        try:
+
+        def create():
             with make_client(settings) as client:
                 result = route_query(text, settings, client)
+            if result["status"] != "ok":
+                logging.getLogger(__name__).warning("Planner error: %s", result["error_code"])
+                return None
+            return QueryPlan.model_validate(result["plan"])
+
+        # Đổi prompt/model/mức suy luận thì kế hoạch cũ không được dùng lại.
+        key = (normalize_query(text), PROMPT, settings.model, settings.reasoning_effort)
+        try:
+            return self.plans.get_or_create(key, create)
         except ValueError as error:
             logging.getLogger(__name__).warning("Planner unavailable: %s", type(error).__name__)
-            return None
-        if result["status"] != "ok":
-            logging.getLogger(__name__).warning("Planner error: %s", result["error_code"])
-            return None
-        return QueryPlan.model_validate(result["plan"])
+            return None, False
 
     def retrieve(self, text, plan, method="hybrid"):
         from image_search.retrieval.listing import search_list
@@ -68,7 +76,7 @@ class SearchService:
 
     def search(self, text):
         started = time.perf_counter()
-        plan = self.plan(text)
+        plan, cached = self.plan(text)
         result = self.retrieve(text, plan)
         groups = []
         for group in result["groups"]:
@@ -99,6 +107,7 @@ class SearchService:
             "query": text,
             "question": result.get("question"),
             "planned": plan is not None,
+            "plan_cached": cached,
             "groups": groups,
             "took_ms": (time.perf_counter() - started) * 1000,
         }
