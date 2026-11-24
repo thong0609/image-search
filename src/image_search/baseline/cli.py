@@ -18,7 +18,6 @@ def add_index_arguments(parser):
 
 def add_search_arguments(parser):
     parser.add_argument("--method", choices=["vector", "keyword", "hybrid"], default="vector")
-    parser.add_argument("--keyword-dir", type=Path)
     parser.add_argument("--rrf-k", type=int)
     parser.add_argument("--candidates", type=int)
 
@@ -121,7 +120,6 @@ def main():
                 threads=args.threads,
                 output_dir=args.output_dir,
                 method=args.method,
-                keyword_dir=args.keyword_dir,
                 rrf_k=args.rrf_k,
                 candidates=args.candidates,
             )
@@ -134,7 +132,6 @@ def main():
                 threads=args.threads,
                 output_dir=args.output_dir,
                 method=args.method,
-                keyword_dir=args.keyword_dir,
                 rrf_k=args.rrf_k,
                 candidates=args.candidates,
             )

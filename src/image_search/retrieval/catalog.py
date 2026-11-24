@@ -2,15 +2,13 @@
 
 from collections import defaultdict
 
-from image_search.baseline.keyword import tokenize
-
-
-def name_key(text):
-    return " ".join(tokenize(text))
+from image_search.adapters.qdrant.metadata import name_key
 
 
 class Catalog:
-    def __init__(self, records, image_ids, aliases=None):
+    def __init__(self, records, image_ids, aliases=None, vector_store=None):
+        self.vector_store = vector_store
+        self.aliases = aliases or {}
         self.image_entities = defaultdict(set)
         self.entity_images = defaultdict(set)
         self.names = defaultdict(set)
@@ -42,7 +40,20 @@ class Catalog:
             self.names[name_key(alias)].update(eids)
 
     def resolve(self, mention):
-        return set(self.names.get(name_key(mention), set()))
+        key = name_key(mention)
+        if self.vector_store is None:
+            return set(self.names.get(key, set()))
+        matches = self.vector_store.filtered_payloads(name=key, fields=["records"])
+        entity_ids = {
+            r["entity_id"]
+            for payload in matches
+            for r in payload["records"]
+            if name_key(r["entity_name"]) == key
+        }
+        for alias, ids in self.aliases.items():
+            if name_key(alias) == key:
+                entity_ids.update(ids)
+        return entity_ids
 
     def images_for(self, entity_ids):
         return (

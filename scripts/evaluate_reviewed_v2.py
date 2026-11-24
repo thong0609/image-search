@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from image_search.baseline.evaluate import score_query
-from image_search.baseline.keyword import fuse_rankings, keyword_search, load_keyword_index
+from image_search.baseline.keyword import build_keyword_index, fuse_rankings, keyword_search
 from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_json, write_jsonl
 from image_search.baseline.vectors import (
     encode_text,
@@ -59,13 +59,15 @@ def main():
         options["threads"],
     )
     assert processor_hash(processor) == index["processor_sha256"]
-    keyword, _ = load_keyword_index(corpus, "var/hybrid-v1/keyword-index", 1.2, 0.75)
+    source_records = [r for payload in store.payloads.values() for r in payload["records"]]
+    keyword, keyword_metadata = build_keyword_index(source_records, index["image_ids"], 1.2, 0.75)
     write_json(
         OUTPUT / "experiment.json",
         {
             "manifest_sha256": file_hash(ROOT / "manifest.json"),
             "vector_index_sha256": index["index_sha256"],
-            "keyword_index_sha256": file_hash("var/hybrid-v1/keyword-index/index.json"),
+            "keyword_metadata": keyword_metadata,
+            "search_metadata_sha256": index["search_metadata_sha256"],
             "script_sha256": file_hash(Path(__file__)),
             "config": options,
             "quality_tier": manifest["quality_tier"],

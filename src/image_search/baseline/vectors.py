@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 from image_search.baseline.benchmark import load_manifest, write_gallery
-from image_search.baseline.keyword import fuse_rankings, keyword_search, load_keyword_index
+from image_search.baseline.keyword import build_keyword_index, fuse_rankings, keyword_search
 from image_search.baseline.settings import get_baseline_settings
 from image_search.baseline.utils import (
     file_hash,
@@ -85,7 +85,7 @@ def build_index(
     import torch
 
     from image_search.adapters.qdrant.client import create_qdrant_client
-    from image_search.adapters.qdrant.vectors import QdrantVectors, save_metadata
+    from image_search.adapters.qdrant.vectors import QdrantVectors
     from image_search.config import get_settings
     from image_search.retrieval.catalog import Catalog
     from image_search.retrieval.settings import RetrievalSettings
@@ -151,34 +151,48 @@ def build_index(
             index["config"]["model"],
             index["config"]["revision"],
         )
-        save_metadata(client, collection, index)
+        from image_search.adapters.qdrant.metadata import sync_metadata
+
+        sync_metadata(
+            store, index, catalog, manifest["images"], manifest["files"]["records"]["sha256"]
+        )
     finally:
         client.close()
 
 
-def load_index(manifest_path, collection=None):
+def load_index(manifest_path=None, collection=None):
     from image_search.adapters.qdrant.client import create_qdrant_client
     from image_search.adapters.qdrant.vectors import QdrantVectors, read_metadata
     from image_search.config import get_settings
     from image_search.retrieval.settings import RetrievalSettings
 
     collection = collection or RetrievalSettings().qdrant_collection
-    manifest = load_manifest(manifest_path)
+    manifest = load_manifest(manifest_path) if manifest_path else None
     client = create_qdrant_client(get_settings())
     try:
         metadata = read_metadata(client, collection)
         config = metadata["config"]
         if (
-            config["manifest_sha256"] != file_hash(manifest_path)
+            (manifest_path and config["manifest_sha256"] != file_hash(manifest_path))
             or config["preprocessing"] != PREPROCESSING
             or config["libraries"] != library_versions()
         ):
             raise ValueError("Qdrant index không khớp corpus/model/thư viện")
-        if [r["image_id"] for r in manifest["images"]] != metadata["image_ids"]:
+        if manifest and [r["image_id"] for r in manifest["images"]] != metadata["image_ids"]:
             raise ValueError("Image IDs không khớp Qdrant index")
         store = QdrantVectors(client, collection, metadata["index_sha256"], metadata["shape"][1])
         store.validate(metadata["image_ids"])
-        return manifest, metadata, store
+        from image_search.adapters.qdrant.metadata import read_payloads
+
+        if not metadata.get("search_metadata_sha256"):
+            raise ValueError(
+                "Thiếu search metadata trong Qdrant; chạy image-search-qdrant --sync-metadata"
+            )
+        store.metadata_hash = metadata["search_metadata_sha256"]
+        payloads = read_payloads(store, metadata["image_ids"], store.metadata_hash)
+        store.payloads = payloads
+        corpus = {"images": [payloads[iid]["image"] for iid in metadata["image_ids"]]}
+        return manifest or corpus, metadata, store
     except Exception:
         client.close()
         raise
@@ -194,7 +208,6 @@ def search_index(
     threads=4,
     output_dir=None,
     method="vector",
-    keyword_dir=None,
     rrf_k=None,
     candidates=None,
 ):
@@ -207,7 +220,7 @@ def search_index(
         raise ValueError("Phương pháp, top-k hoặc threads không hợp lệ")
     if rrf_k < 1 or (method == "hybrid" and candidates < top_k):
         raise ValueError("Cấu hình hybrid không hợp lệ; candidates cần >= top-k")
-    manifest, metadata, store = load_index(manifest_path, collection)
+    manifest, metadata, store = load_index(None if text is not None else manifest_path, collection)
     config = metadata["config"]
     model_load_seconds = 0
     if method != "keyword":
@@ -222,9 +235,9 @@ def search_index(
     keyword_load_seconds = 0
     if method != "vector":
         started = time.perf_counter()
-        keyword_dir = Path(keyword_dir or Path("var/hybrid-v1/keyword-index"))
-        keyword_index, keyword_metadata = load_keyword_index(
-            manifest, keyword_dir, settings.keyword_k1, settings.keyword_b
+        records = [r for payload in store.payloads.values() for r in payload["records"]]
+        keyword_index, keyword_metadata = build_keyword_index(
+            records, metadata["image_ids"], settings.keyword_k1, settings.keyword_b
         )
         keyword_load_seconds = time.perf_counter() - started
     default_output = Path("var") / ("search" if text is not None else split)
@@ -274,7 +287,7 @@ def search_index(
     write_json(
         output_dir / "run.json",
         {
-            "manifest_sha256": file_hash(manifest_path),
+            "manifest_sha256": metadata["config"]["manifest_sha256"],
             "index_sha256": metadata["index_sha256"],
             "split": split if text is None else None,
             "seed": seed,

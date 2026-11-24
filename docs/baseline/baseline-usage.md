@@ -199,10 +199,9 @@ Rank bắt đầu từ 1; ảnh vắng ở nhánh nào không nhận điểm t�
 60, không phải số kết quả top-K. Bằng điểm thì xếp theo image_id. Câu hỏi vẫn đi nguyên
 câu vào cả hai nhánh; chưa có tách mục tiêu, graph hoặc reranker.
 
-Keyword index mặc định ở `var/hybrid-v1/keyword-index/` (đổi bằng `--keyword-dir`), gồm document,
-hash dữ liệu và cấu hình. Nó được tạo ở lần chạy đầu; đổi tokenizer/field/k1/b/corpus
-cần thư mục keyword mới. Nhánh keyword không nạp encoder; hiện dùng cùng lệnh và vector
-index đã có để kiểm tra corpus/thứ tự ID cho phép so sánh nhất quán.
+Keyword index được dựng trong RAM từ payload Qdrant khi khởi tạo. Không đọc/ghi
+keyword index trên đĩa; đã bỏ `--keyword-dir` và `IMAGE_SEARCH_RETRIEVAL_KEYWORD_DIR`.
+Nhánh keyword giữ BM25/tokenizer/IDF toàn corpus và không nạp encoder.
 
 Không chọn trọng số riêng cho nhánh nào; `--keyword-weight` và cấu hình môi trường
 `HYBRID_KEYWORD_WEIGHT` đã được bỏ. Kết quả weighted RRF cũ trong `var/hybrid-v1/`
@@ -246,7 +245,7 @@ HF_HUB_OFFLINE=1 image-search-embedding text "ảnh mặt tiền cửa hàng" --
 ```
 
 `check` mã hóa lại ảnh mẫu và so với vector lấy từ Qdrant.
-Các tham số `--threads`, `--batch-size`, `--manifest` đặt trước subcommand.
+Các tham số `--threads`, `--batch-size` đặt trước subcommand.
 
 
 ## Retrieval theo kế hoạch
@@ -262,15 +261,17 @@ HF_HUB_OFFLINE=1 image-search-retrieval var/retrieval-v1/planner/predictions.jso
 
 Input là JSONL kết quả planner (`query_id`, `status`, `plan`, `text` tùy chọn).
 `--method` chọn vector/keyword/hybrid/all; `--rounds` mặc định 3, seed 42.
-Không ghi đè output đã có. Dùng settings `IMAGE_SEARCH_EMBEDDING_` để chọn index và
-`IMAGE_SEARCH_RETRIEVAL_` cho shortlist/bridge. Model và processor phải khớp image index.
+Không ghi đè output đã có. Dùng `IMAGE_SEARCH_RETRIEVAL_QDRANT_COLLECTION` để chọn collection,
+`IMAGE_SEARCH_EMBEDDING_` cho encoder và `IMAGE_SEARCH_RETRIEVAL_` cho shortlist/bridge.
+Model và processor phải khớp image index.
 
 - Vector cosine, BM25 và RRF chuẩn 1:1 dùng lại thuật toán baseline.
-- Named entity tra tên chuẩn hóa không dấu/hoa thường/dấu câu, không substring/fuzzy.
+- Named entity tra `entity_name_keys` trực tiếp trong Qdrant: chuẩn hóa không dấu/hoa thường/dấu câu, không substring/fuzzy.
   Có thể cấp `--aliases file.json` theo dạng alias -> list entity ID thật trong catalog.
   Không đọc đáp án benchmark để tạo alias. Tên không khớp trả entity_not_found,
   không bỏ điều kiện entity rồi tìm toàn kho.
-- Lọc phạm vi entity TRƯỚC top-K. BM25 giữ IDF toàn corpus rồi lọc/cắt K.
+- Qdrant lọc `entity_ids` trước vector top-K, loại bridge bằng point ID.
+  BM25 giữ IDF toàn corpus; tập ID hợp lệ lấy bằng cùng filter Qdrant trước cắt K.
 - Mỗi mục tiêu có candidates (mặc định top-100) và results (count yêu cầu hoặc giới hạn
   hiển thị 10 nếu count=null). Thiếu ảnh chỉ báo insufficient_candidates nếu có count
   tường minh; không bù bằng ảnh của target khác. Chưa kiểm chứng điều kiện thị giác.
@@ -361,7 +362,26 @@ Collection khác model/revision/corpus bị từ chối; dùng tên collection m
 - Collection metadata: `image_search_siglip2_v1_metadata`, một bản ghi cấu hình
   model/revision, processor, image IDs, kích thước và fingerprint index.
 - Dữ liệu bền vững: Docker volume `images-search_qdrant-data`, mount `/qdrant/storage`.
-- Ảnh gốc: `var/images/`; BM25 metadata: `var/hybrid-v1/keyword-index/`.
+- Ảnh gốc: `var/images/`; BM25 dựng trong RAM từ payload.
+
+Payload ảnh có `records` giữ toàn bộ metadata nguồn và provenance theo từng record,
+`entity_ids`, `entity_names`, `entity_name_keys`, `captions`, `leaf_labels`, `page_titles`,
+`image` (ID/đường dẫn ảnh), `metadata_schema` và fingerprint `search_metadata_sha256`.
+Các tên/caption ở record riêng tránh gán nhầm entity khi một ảnh có nhiều liên kết.
+
+Với collection đã có vector nhưng chưa có metadata đầy đủ:
+
+```bash
+uv run image-search-qdrant --sync-metadata
+```
+
+Lệnh đọc nguồn đã pin một lần khi nhập, kiểm tra corpus/hash, cập nhật payload bằng
+`set_payload` (không encode hoặc ghi lại vector), kiểm tra đủ ảnh/snapshot rồi lưu
+fingerprint trong collection metadata. Có thể chạy lại cùng nguồn.
+Runtime chỉ đọc Qdrant để tra entity, lọc và kiểm tra bằng chứng; không đọc
+CSV, JSONL nguồn, benchmark manifest hoặc keyword index local. File nguồn vẫn giữ
+cho nhập dữ liệu/đánh giá; ảnh/model vẫn ở local. Alias truyền tường minh qua CLI
+là cấu hình bổ sung, không phải fallback về file metadata.
 
 Cấu hình: `IMAGE_SEARCH_QDRANT_URL`, `IMAGE_SEARCH_RETRIEVAL_QDRANT_COLLECTION`.
 Tìm cosine với `exact=True`, lọc phạm vi trước top-K; chưa đánh giá ANN/HNSW.
@@ -371,3 +391,10 @@ Không chạy `docker compose down -v` nếu muốn giữ dữ liệu.
 Các file vector và cache cũ đã được xóa; báo cáo benchmark lịch sử vẫn được giữ
 và không đại diện cho phép đo lại sau chuyển đổi. Kiểm tra live sau khi bỏ file
 vector: `var/qdrant-v1/verification-live.json`, `var/qdrant-v1/live/index.html`.
+
+
+Kiểm tra metadata: `var/qdrant-metadata-v1/verification.json`;
+6 kế hoạch thật (2 câu mỗi loại), vector/keyword/hybrid:
+`var/qdrant-metadata-v1/live/index.html`. Đây là kiểm tra tích hợp, chưa chạy lại
+benchmark 400 câu hoặc thay chính sách entity/multi-hop/reranking.
+Tham khảo [Qdrant filtering](https://qdrant.tech/documentation/search/filtering/).

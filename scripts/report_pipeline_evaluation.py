@@ -156,9 +156,21 @@ def main():
     assert reference_manifest["files"]["queries.jsonl"]["sha256"] == run["queries_sha256"]
     assert reference_manifest["files"]["answers.jsonl"]["sha256"] == run["answers_sha256"]
     assert reference_run["vector_index_sha256"] == run["image_index_sha256"]
-    assert reference_run["keyword_index_sha256"] == file_hash(
-        Path(run["retrieval"]["keyword_dir"]) / "index.json"
-    )
+    if "keyword_metadata" in run:
+        if "keyword_metadata" in reference_run:
+            reference_keyword = reference_run["keyword_metadata"]
+        else:
+            # Artifact lịch sử để đối chiếu benchmark, không phải đường đọc khi truy vấn.
+            path = Path("var/hybrid-v1/keyword-index/index.json")
+            assert file_hash(path) == reference_run["keyword_index_sha256"]
+            old = read_json(path)
+            reference_keyword = {**old["config"], "documents_sha256": old["documents_sha256"]}
+        for key in ("documents_sha256", "fields", "tokenizer", "k1", "b"):
+            assert reference_keyword[key] == run["keyword_metadata"][key]
+    else:
+        assert reference_run["keyword_index_sha256"] == file_hash(
+            Path(run["retrieval"]["keyword_dir"]) / "index.json"
+        )
     assert reference_run["config"]["rrf_k"] == run["retrieval"]["rrf_k"]
     assert reference_run["config"]["candidates"] == run["retrieval"]["candidates"]
     baseline_rows = read_jsonl(baseline_root / "hybrid/predictions.jsonl")

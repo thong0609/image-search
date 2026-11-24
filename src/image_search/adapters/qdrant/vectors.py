@@ -11,11 +11,12 @@ def point_id(image_id):
 
 
 class QdrantVectors:
-    def __init__(self, client, collection, index_hash, dimensions):
+    def __init__(self, client, collection, index_hash, dimensions, metadata_hash=None):
         self.client = client
         self.collection = collection
         self.index_hash = index_hash
         self.dimensions = dimensions
+        self.metadata_hash = metadata_hash
 
     def validate(self, image_ids, vectors=None, allow_partial=False):
         config = self.client.get_collection(self.collection).config.params.vectors
@@ -88,21 +89,64 @@ class QdrantVectors:
             self.client.upsert(self.collection, points, wait=True)
         return self.validate(image_ids, vectors)
 
-    def search(self, vector, limit, eligible):
-        if not eligible:
+    def query_filter(self, eligible=None, entity_ids=None, excluded=None, name=None):
+        must = [
+            models.FieldCondition(
+                key="index_sha256", match=models.MatchValue(value=self.index_hash)
+            )
+        ]
+        if self.metadata_hash:
+            must.append(
+                models.FieldCondition(
+                    key="search_metadata_sha256", match=models.MatchValue(value=self.metadata_hash)
+                )
+            )
+        if eligible is not None:
+            must.append(models.HasIdCondition(has_id=[point_id(iid) for iid in sorted(eligible)]))
+        if entity_ids is not None:
+            must.append(
+                models.FieldCondition(
+                    key="entity_ids", match=models.MatchAny(any=sorted(entity_ids))
+                )
+            )
+        if name is not None:
+            must.append(
+                models.FieldCondition(key="entity_name_keys", match=models.MatchValue(value=name))
+            )
+        must_not = (
+            [models.HasIdCondition(has_id=[point_id(iid) for iid in sorted(excluded)])]
+            if excluded
+            else []
+        )
+        return models.Filter(must=must, must_not=must_not)
+
+    def filtered_payloads(
+        self, eligible=None, entity_ids=None, excluded=None, name=None, fields=None
+    ):
+        if eligible is not None and not eligible or entity_ids is not None and not entity_ids:
+            return []
+        result, offset = [], None
+        while True:
+            points, offset = self.client.scroll(
+                self.collection,
+                limit=256,
+                offset=offset,
+                scroll_filter=self.query_filter(eligible, entity_ids, excluded, name),
+                with_payload=fields if fields is not None else True,
+                with_vectors=False,
+            )
+            result.extend(p.payload for p in points)
+            if offset is None:
+                return result
+
+    def search(self, vector, limit, eligible=None, entity_ids=None, excluded=None):
+        if eligible is not None and not eligible or entity_ids is not None and not entity_ids:
             return []
         response = self.client.query_points(
             self.collection,
             query=vector.tolist(),
             limit=limit,
-            query_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="index_sha256", match=models.MatchValue(value=self.index_hash)
-                    ),
-                    models.HasIdCondition(has_id=[point_id(iid) for iid in sorted(eligible)]),
-                ]
-            ),
+            query_filter=self.query_filter(eligible, entity_ids, excluded),
             search_params=models.SearchParams(exact=True),
             with_payload=["image_id"],
             with_vectors=False,

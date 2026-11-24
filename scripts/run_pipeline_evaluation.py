@@ -48,6 +48,8 @@ def main():
         "prompt_version": PROMPT_VERSION,
         "prompt_sha256": hashlib.sha256(PROMPT.encode()).hexdigest(),
         "image_index_sha256": image_index["index_sha256"],
+        "keyword_metadata": engine.keyword_metadata,
+        "search_metadata_sha256": image_index["search_metadata_sha256"],
         "method": "hybrid",
         "rrf_weights": [1, 1],
         "workers": args.workers,

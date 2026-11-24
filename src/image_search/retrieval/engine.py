@@ -16,12 +16,10 @@ class RetrievalEngine:
         self.catalog = catalog
         self.settings = settings
 
-    def search(self, text, vector, method, limit, allowed=None, excluded=None):
+    def search(self, text, vector, method, limit, allowed=None, excluded=None, entity_ids=None):
         if method not in ("vector", "keyword", "hybrid"):
             raise ValueError("Phương pháp không hợp lệ")
-        eligible = set(self.image_ids) if allowed is None else set(allowed)
-        eligible.difference_update(excluded or ())
-        if not eligible:
+        if allowed is not None and not allowed or entity_ids is not None and not entity_ids:
             return []
         dense, sparse = [], []
         count = max(limit, self.settings.candidates) if method == "hybrid" else limit
@@ -33,9 +31,15 @@ class RetrievalEngine:
                 or not np.isclose(np.linalg.norm(vector), 1, atol=1e-5)
             ):
                 raise ValueError("Thiếu vector chuẩn hóa hoặc sai số chiều")
-            dense = self.vector_store.search(vector, count, eligible)
+            dense = self.vector_store.search(vector, count, allowed, entity_ids, excluded)
         if method != "vector":
-            # Dùng IDF toàn corpus; lọc trước cắt K để không mất ảnh đúng phạm vi entity.
+            # Qdrant xác định tập ảnh hợp lệ; BM25 giữ IDF toàn corpus, lọc trước top-K.
+            eligible = {
+                p["image_id"]
+                for p in self.vector_store.filtered_payloads(
+                    allowed, entity_ids, excluded, fields=["image_id"]
+                )
+            }
             sparse = [
                 r
                 for r in keyword_search(text, self.keyword, len(self.image_ids))

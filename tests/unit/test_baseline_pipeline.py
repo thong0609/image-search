@@ -153,7 +153,6 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
             threads=1,
             method=method,
             output_dir=tmp_path / method,
-            keyword_dir=tmp_path / "keyword",
         )
         report = evaluate_predictions(manifest, output / "predictions.jsonl")
         assert report["run"]["method"] == method
@@ -165,7 +164,7 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
                 "candidates": 100,
             }
         assert len(read_jsonl(output / "predictions.jsonl")) == 4
-        assert read_json(output / "run.json")["keyword_index"]["config"]["fields"] == [
+        assert read_json(output / "run.json")["keyword_index"]["fields"] == [
             "entity_name",
             "leaf_label",
             "page_title",

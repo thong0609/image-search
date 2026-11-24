@@ -60,7 +60,7 @@ image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all -
 ```
 
 Query được mã hóa trực tiếp bằng SigLIP2 rồi tìm trong Qdrant.
-Cần Qdrant đã có index và metadata nguồn local; [hướng dẫn chi tiết](docs/baseline/baseline-usage.md#retrieval-theo-kế-hoạch).
+Cần Qdrant đã có vector và metadata tìm kiếm; runtime không đọc CSV/JSONL nguồn hoặc keyword index trên đĩa; [hướng dẫn chi tiết](docs/baseline/baseline-usage.md#retrieval-theo-kế-hoạch).
 
 ## Scaffold hiện có
 
@@ -175,4 +175,7 @@ Vector retrieval của pipeline dùng Qdrant tại `http://localhost:6333`, coll
 `image_search_siglip2_v1`. Khởi động bằng `docker compose up -d qdrant`, rồi chạy
 `uv run image-search-qdrant` để lập index ảnh trực tiếp vào Qdrant (cần extra `baseline`; dùng lại collection nếu đã có).
 Xem [hướng dẫn Qdrant](docs/baseline/baseline-usage.md#lưu-vector-vào-qdrant)
-cho cấu hình và nơi lưu dữ liệu.
+cho cấu hình và nơi lưu dữ liệu. Với collection cũ, chạy
+`uv run image-search-qdrant --sync-metadata` một lần để nạp metadata từ nguồn đã pin.
+Tên entity, caption, nhãn, các record nguồn và đường dẫn ảnh nằm trong payload Qdrant;
+BM25 dựng trong RAM từ payload, dùng cùng thuật toán và RRF 1:1 như trước.

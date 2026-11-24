@@ -15,7 +15,9 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Sau cùng |
 
 Embedding ảnh được tạo offline và lưu trực tiếp vào Qdrant; embedding query chỉ ở RAM khi tìm kiếm.
-Metadata model/index nằm trong Qdrant. Không lưu file vector hoặc thêm backend khác.
+Metadata model/index và metadata tìm kiếm nằm trong Qdrant; lọc entity trực tiếp theo payload.
+BM25 dựng trong RAM từ Qdrant; runtime không đọc metadata nguồn local.
+Không lưu file vector hoặc thêm backend khác.
 Baseline hiện có index cho 1.886 ảnh, không cần mã hóa lại nếu model/tiền xử lý/corpus không đổi.
 Planner OpenAI hiện chưa đạt ngân sách độ trễ; xử lý ở bước tối ưu, chưa coi là cấu hình online cuối.
 

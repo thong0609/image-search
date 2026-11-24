@@ -15,7 +15,6 @@ from image_search.embedding.siglip2 import Siglip2Embedding, plan_steps
 
 def make_parser(settings):
     parser = argparse.ArgumentParser(description="Embedding SigLIP2 từ index hiện có")
-    parser.add_argument("--manifest", type=Path, default=settings.manifest)
     parser.add_argument("--threads", type=int, default=settings.threads)
     parser.add_argument("--batch-size", type=int, default=settings.batch_size)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -43,7 +42,6 @@ def main():
         settings = EmbeddingSettings(
             **{
                 **settings.model_dump(),
-                "manifest": args.manifest,
                 "threads": args.threads,
                 "batch_size": args.batch_size,
             }
@@ -78,7 +76,7 @@ def main():
             "libraries": encoder.index["config"]["libraries"],
             "processor_sha256": encoder.index["processor_sha256"],
             "image_index_sha256": encoder.index["index_sha256"],
-            "manifest_sha256": file_hash(settings.manifest),
+            "manifest_sha256": encoder.index["config"]["manifest_sha256"],
             "image_count": len(encoder.index["image_ids"]),
             "dimensions": encoder.dimensions,
             "max_text_tokens": encoder.max_length,

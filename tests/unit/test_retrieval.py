@@ -71,6 +71,10 @@ def engine():
     catalog = Catalog(rows, ids)
     store = QdrantVectors(QdrantClient(":memory:"), "test-images", "test-index", 2)
     store.upload(ids, vectors, catalog, "test", "test")
+    from image_search.adapters.qdrant.metadata import sync_metadata
+
+    sync_metadata(store, {"image_ids": ids}, catalog, [{"image_id": iid} for iid in ids], "source")
+    catalog.vector_store = store
     return RetrievalEngine(ids, store, keyword, catalog, settings)
 
 

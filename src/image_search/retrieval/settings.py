@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,7 +9,6 @@ class RetrievalSettings(BaseSettings):
 
     qdrant_collection: str = "image_search_siglip2_v1"
 
-    keyword_dir: Path = Path("var/hybrid-v1/keyword-index")
     top_k: int = Field(default=100, ge=1)
     candidates: int = Field(default=100, ge=1)
     rrf_k: int = Field(default=60, ge=1)
