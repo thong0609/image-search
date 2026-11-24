@@ -1,36 +1,22 @@
-# Trạng thái và hướng triển khai
+# Lộ trình triển khai
 
-## Đã hoàn thành
+Ưu tiên thử nghiệm chất lượng tìm kiếm trên dataset hiện có; tích hợp website sau cùng.
+Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng và độ trễ ở mỗi bước.
 
-- Scaffold FastAPI/PostgreSQL/Qdrant, migration và frontend Next.js.
-- Baseline v1/v2: đọc CSV, tải ảnh, vector SigLIP2, keyword BM25, RRF chuẩn 1:1.
-- Chạy đủ 400 câu v2 theo ba loại single/multi-target/multi-hop, có báo cáo chất lượng,
-  độ trễ và trang xem ảnh kết quả của từng phương pháp.
-- Dọn artifact trung gian và tổ chức lại tài liệu.
-
-Nguồn hiện tại là CSV đã duyệt; corpus benchmark có 1.886 ảnh.
-Mốc baseline hoàn thành không đồng nghĩa sản phẩm/API nghiệp vụ đã hoàn thành.
-Xem [kết quả baseline](../baseline/baseline-v2-results.md) và
-[giới hạn nhãn benchmark](../baseline/benchmark-design.md).
-
-## Hạng mục tiếp theo để lựa chọn
-
-| Hạng mục | Đầu ra cần có | Cách kiểm tra |
+| Bước | Công việc chính | Trạng thái |
 |---|---|---|
-| API tìm kiếm | Tích hợp baseline vào API với query/filters, lỗi rõ ràng | Contract và test query hợp lệ/rỗng, lỗi dịch vụ |
-| Giao diện tìm ảnh | Search bar, grid, nguồn ảnh, loading/rỗng/lỗi | Chạy với API thật, desktop/mobile |
-| Multi-target | Tách yêu cầu và trả nhóm theo từng mục tiêu | Mỗi nhóm đủ số lượng, không bù ảnh giữa nhóm |
-| Graph/multi-hop | Quan hệ có bằng chứng và phiên bản | Duyệt facts, bridge/distractor và ablation |
-| VLM rerank | Chấm shortlist qua adapter có timeout/budget | So chất lượng và độ trễ với baseline |
-| Hoàn thiện benchmark | Query thật, nhãn độc lập, pool đáp án | Chốt phiên bản mới và đánh giá lại cùng cấu hình |
+| 1 | Chuẩn bị dataset, bộ câu hỏi và baseline đối chứng | Đã có v1/v2; nhãn còn giới hạn |
+| 2 | Planner: phân loại câu, tách mục tiêu và dependency | Đã thử OpenAI prompt v2; tạm giữ nguyên |
+| 3 | Embedding: chọn/thử model ảnh–văn bản, mã hóa ảnh và lập index | Đã kiểm tra/tái sử dụng index SigLIP2; tạo vector theo từng bước planner và đo độ trễ |
+| 4 | Retrieval: mã hóa query của từng bước, tìm vector/keyword và kết hợp hybrid | Bước tiếp theo |
+| 5 | Thực thi kế hoạch: ghép retrieval theo từng mục tiêu, entity và bridge cho multi-hop | Chưa triển khai |
+| 6 | Reranking: sắp xếp lại shortlist bằng model phù hợp | Chưa triển khai |
+| 7 | Đánh giá toàn pipeline, chọn cấu hình và tối ưu chất lượng/độ trễ | Sau khi có luồng hoàn chỉnh |
+| 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Sau cùng |
 
-Đây là danh sách hạng mục đề xuất, chưa tự chọn bước tiếp theo hoặc nhà cung cấp.
-Không còn kế hoạch thu thập Commons/Wikidata hay profile chỉ dành cho địa danh.
-Dùng dataset hiện có để phát triển và đo trước khi mở rộng nguồn hoặc quy mô.
+Embedding ảnh được tạo offline; embedding query được tạo khi tìm kiếm.
+Baseline hiện có index cho 1.886 ảnh, không cần mã hóa lại nếu model/tiền xử lý/corpus không đổi.
+Planner OpenAI hiện chưa đạt ngân sách độ trễ; xử lý ở bước tối ưu, chưa coi là cấu hình online cuối.
 
-## Tài liệu liên quan
-
-- [PRD](prd.md): yêu cầu sản phẩm.
-- [Quyết định](decisions.md): lựa chọn còn hiệu lực và mục đã thay thế.
-- [Thiết kế hệ thống](../design/system-design.md): ranh giới thành phần.
-- [Frontend](../../frontend/README.md): toolchain và lệnh kiểm tra.
+Tham khảo: [kết quả baseline](../baseline/baseline-v2-results.md),
+[planner](../design/planner.md), [thiết kế hệ thống](../design/system-design.md).

@@ -231,3 +231,51 @@ kiểm tra giải mã, dùng SHA-256 bytes làm image ID và hỗ trợ chạy t
 Ảnh tải lỗi không trở thành ví dụ không có đáp án. Giữ nhãn đánh giá riêng khỏi
 đầu vào retrieval; chia nhóm entity/alias/ảnh trùng trước khi chốt dev/test.
 Mỗi lần thay corpus hoặc nhãn cần phiên bản benchmark mới.
+
+
+## Embedding cho retrieval
+
+Bước 3 hiện có `src/image_search/embedding/`: settings, encoder và CLI đơn giản.
+Tái sử dụng `var/index-v1/images.npy`, checkpoint SigLIP2/revision và processor hash
+của baseline; không tự đổi model/tiền xử lý hoặc mã hóa lại toàn kho.
+
+- Ảnh: 1.886 vector float32, 768 chiều, chuẩn hóa L2; giữ thứ tự image ID theo index.
+- Text: mã hóa `search_text` riêng cho từng bước `resolve_entity`/`retrieve_images`.
+  Giữ query ID, step ID, target ID và dependency trong `steps.jsonl` để executor dùng sau.
+- Câu cần làm rõ/planner lỗi được bỏ qua với lý do, không tạo vector giả.
+- Batch text dùng padding/truncation giống baseline; ghi token_count/truncated cho từng bước.
+  Text vượt 64 token bị cắt theo cấu hình model, cần rà trước khi đánh giá retrieval.
+- Embedding chưa thực thi entity lookup, bridge, lọc ảnh, retrieval hoặc reranking.
+
+Từ repository root sau khi cài `--extra baseline` (kèm `--extra planner` để giữ SDK):
+
+```bash
+HF_HUB_OFFLINE=1 image-search-embedding check --output-dir var/embeddings/siglip2/check-new
+HF_HUB_OFFLINE=1 image-search-embedding text "ảnh mặt tiền cửa hàng" --output-dir var/embeddings/siglip2/text-new
+HF_HUB_OFFLINE=1 image-search-embedding benchmark var/planner-v2/dev/predictions.jsonl --rounds 3 --output-dir var/embeddings/siglip2/benchmark-new
+```
+
+Output mới không được tồn tại. Tham số `--threads`, `--batch-size`, `--manifest`,
+`--index-dir` đặt TRƯỚC subcommand; class `EmbeddingSettings` đọc namespace
+`IMAGE_SEARCH_EMBEDDING_` trong `.env`. Chạy `python -m image_search.embedding` tương đương CLI.
+
+Đã kiểm tra hash/norm/order toàn index và mã hóa lại 3 ảnh mẫu: sai số tối đa 3,28e-7.
+Đã mã hóa plan v2 dev/test: 46/47 text vector, mỗi split bỏ 3 câu cần làm rõ,
+không text nào bị cắt. So 3 text mỗi split với `encode_text` baseline đều khớp.
+
+| Embedding toàn bộ bước của một plan | p50 ms | p90 ms | p95 ms |
+|---|---:|---:|---:|
+| Dev (27 plan) | 86,88 | 95,82 | 106,26 |
+| Test (27 plan) | 91,98 | 132,78 | 135,07 |
+
+Ba vòng sau warmup, CPU 4 threads, batch tối đa 8, OPENBLAS_NUM_THREADS=1,
+không cache vector. Không gồm planner, retrieval, rerank, nạp model hoặc kiểm tra index.
+Không kết luận SLO toàn pipeline từ số đo riêng này. Bộ plan tổng hợp có entity giả,
+chỉ dùng kiểm tra mapping/vector và thời gian, chưa đo chất lượng tìm ảnh thật.
+
+Artifact local: `var/embeddings/siglip2/report.md`, `verification.json`,
+`check-v1/`, `planner-v2-dev/`, `planner-v2-test/`. Source CLI lúc đo giữ trong
+`executed-cli.py`; source sau đó chỉ sửa xuống dòng để đạt lint.
+
+Kiểm tra code: `pytest -q tests/unit/test_embedding.py` (test giả, không tải model).
+Tài liệu model: [SigLIP2 Transformers](https://huggingface.co/docs/transformers/model_doc/siglip2).

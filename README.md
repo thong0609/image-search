@@ -32,6 +32,22 @@ Cấu hình `OPENAI_API_KEY` trong `.env` để chạy model thật. Xem
 `src/image_search/planner/` chứa schema, settings, router, CLI và scorer;
 `tests/fixtures/planner-cases.jsonl` chứa 60 câu và nhãn kế hoạch riêng.
 
+## Embedding SigLIP2
+
+Tái sử dụng index 1.886 ảnh, 768 chiều; mã hóa text của từng bước planner cùng
+checkpoint/processor, chuẩn hóa L2. Model nạp một lần trong mỗi tiến trình.
+
+```bash
+uv sync --frozen --extra baseline --extra planner
+image-search-embedding check --output-dir var/embeddings/siglip2/check-new
+image-search-embedding text "bên trong cửa hàng" --output-dir var/embeddings/siglip2/text-new
+image-search-embedding plans var/planner-v2/dev/predictions.jsonl --output-dir var/embeddings/siglip2/plans-new
+```
+
+Dùng `HF_HUB_OFFLINE=1` nếu chỉ muốn đọc model đã có trong cache local.
+Đầu ra gồm `vectors.npy`, `steps.jsonl` ánh xạ query/step/target và `embedding.json`.
+Chi tiết và phép đo: [embedding cho retrieval](docs/baseline/baseline-usage.md#embedding-cho-retrieval).
+
 ## Scaffold hiện có
 
 Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. hướng dẫn chạy ở `docs/baseline/`, đặc tả hệ thống ở `docs/design/`, kế hoạch sản phẩm ở `docs/planning/`.
@@ -42,6 +58,7 @@ Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 
 - `src/image_search/modules/`: search, crawling, catalog, ingestion, graph, auth, jobs; nghiệp vụ giao tiếp với hệ ngoài qua ports.
 - `src/image_search/adapters/`: PostgreSQL, Qdrant, local object storage; graph/embedding/VLM có chỗ mở rộng.
 - `src/image_search/main.py`: app factory và wiring dependencies; `config.py`: cấu hình môi trường.
+- `src/image_search/embedding/`: encoder SigLIP2 dùng chung với image index và CLI mã hóa text/plan.
 - `src/image_search/baseline/`: pipeline baseline độc lập; `cli.py` nhận lệnh,
   `records.py` đọc CSV, `download.py` tải ảnh, `benchmark.py` quản lý bộ nhãn,
   `vectors.py` tạo index/tìm kiếm, `keyword.py` tìm BM25 và gộp RRF,

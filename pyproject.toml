@@ -17,6 +17,7 @@ packages = ["src/image_search"]
 [project.scripts]
 image-search-worker = "image_search.modules.jobs.worker:main"
 image-search-smoke = "image_search.smoke:main"
+image-search-embedding = "image_search.embedding.cli:main"
 image-search-planner = "image_search.planner.cli:main"
 image-search-baseline = "image_search.baseline.cli:main"
 

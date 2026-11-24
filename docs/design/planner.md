@@ -147,3 +147,32 @@ thiếu/khác cách chia cụm. SLO p90 toàn pipeline < 300 ms vẫn không đ�
 
 Artifact: `var/planner-v2/dev/comparison.md`, `review.html`, `review-notes.md` và
 `verification.json`. Kết quả v1 giữ nguyên; prompt v1 đã lưu trong commit `eceadae`.
+
+
+## Kết quả test prompt v2
+
+Đã chạy 30 câu test sau khi chốt prompt v2 trên dev, giữ model/settings/nhãn/scorer.
+Không sửa prompt hoặc gọi lại để chọn kết quả. Route đúng 29/30 (96,7%):
+
+| Nhóm | Đúng route | Toàn plan exact-match |
+|---|---:|---:|
+| Single | 9/9 | 3/9 |
+| Multi-target | 9/9 | 6/9 |
+| Multi-hop | 8/9 | 3/9 |
+| Unclear | 3/3 | 3/3 |
+| Tổng | 29/30 | 15/30 |
+
+Một câu multi-hop bị gom single. Còn lỗi tự gán count=1 khi không nêu số ảnh,
+entity mention chứa thêm đối tượng và điều kiện chia cụm khác nhãn mẫu.
+Toàn plan 50% trên test so với 80% dev; đây là exact-match theo nhãn tổng hợp,
+chưa phải độ đúng ngữ nghĩa do người duyệt độc lập xác nhận. Template/entity giả
+còn đơn giản, cần truy vấn thực để đánh giá khả năng khái quát hóa rộng hơn.
+
+P50 12,34 giây, p90 27,15 giây, p95 29,10 giây. Không đạt SLO toàn pipeline 300 ms.
+Không có lỗi API/schema. Câu unclear không chấm slot retrieval; trên 27 câu còn lại:
+target 26/27, count 22/27, conditions 15/27, dependency shape 26/27.
+
+Xem artifact local `var/planner-v2/test/report.md`, `review.html`, `review-notes.md`
+và `verification.json`. Kết quả lưu hash và đã kiểm tra khớp prompt/cấu hình dev.
+Test nay đã được xem; nếu tiếp tục tune theo các lỗi này cần một phép đánh giá
+độc lập mới, không gọi kết quả chạy lại là test holdout ban đầu.
