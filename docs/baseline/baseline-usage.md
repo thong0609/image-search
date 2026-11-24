@@ -279,3 +279,57 @@ Artifact local: `var/embeddings/siglip2/report.md`, `verification.json`,
 
 Kiểm tra code: `pytest -q tests/unit/test_embedding.py` (test giả, không tải model).
 Tài liệu model: [SigLIP2 Transformers](https://huggingface.co/docs/transformers/model_doc/siglip2).
+
+
+## Retrieval theo kế hoạch
+
+`src/image_search/retrieval/` có catalog, settings, engine, runtime loader và CLI.
+Không có framework agent, không gọi OpenAI khi chạy retrieval.
+Dùng dependencies baseline; giữ thêm extra planner nếu còn chạy planner riêng.
+
+```bash
+uv sync --frozen --extra baseline --extra planner
+image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --embeddings var/retrieval-v1/embeddings --method all --output-dir var/retrieval-v1/new-cached
+HF_HUB_OFFLINE=1 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/retrieval-v1/new-live
+```
+
+Input là JSONL kết quả planner (`query_id`, `status`, `plan`, `text` tùy chọn).
+`--method` chọn vector/keyword/hybrid/all; `--rounds` mặc định 3, seed 42.
+Không ghi đè output đã có. Dùng settings `IMAGE_SEARCH_EMBEDDING_` để chọn index và
+`IMAGE_SEARCH_RETRIEVAL_` cho shortlist/bridge. Model và processor phải khớp image index.
+
+- Vector cosine, BM25 và RRF chuẩn 1:1 dùng lại thuật toán baseline.
+- Named entity tra tên chuẩn hóa không dấu/hoa thường/dấu câu, không substring/fuzzy.
+  Có thể cấp `--aliases file.json` theo dạng alias -> list entity ID thật trong catalog.
+  Không đọc đáp án benchmark để tạo alias. Tên không khớp trả entity_not_found,
+  không bỏ điều kiện entity rồi tìm toàn kho.
+- Lọc phạm vi entity TRƯỚC top-K. BM25 giữ IDF toàn corpus rồi lọc/cắt K.
+- Mỗi mục tiêu có candidates (mặc định top-100) và results (count yêu cầu hoặc giới hạn
+  hiển thị 10 nếu count=null). Thiếu ảnh chỉ báo insufficient_candidates nếu có count
+  tường minh; không bù bằng ảnh của target khác. Chưa kiểm chứng điều kiện thị giác.
+- Bridge tìm top-20 ảnh, giữ tối đa 3 entity giả thuyết, một ảnh đại diện tốt nhất mỗi
+  entity. Không coi top-1 là đúng. Ảnh nhiều entity hoặc nguồn ghi chưa chắc chắn bị
+  bỏ khỏi bước nhận diện. Đây là chính sách bảo thủ, có thể bỏ cả alias đúng cùng nơi.
+- Bước phụ thuộc tìm trong các entity giả thuyết của bước trước, loại ảnh bridge đã
+  dùng. Nhiều dependency lấy giao entity. Kết quả giữ bridge image ID/record ID và trace.
+  Đây là traversal ứng viên qua metadata image–entity, chưa là graph facts/VLM xác nhận.
+- Planner lỗi/cần làm rõ, entity mâu thuẫn hoặc không có bridge đều có trạng thái riêng.
+  Không tạo vector, entity hay ảnh giả để lấp kết quả.
+- Cache vector chỉ được dùng nếu hash input, row mapping, model, processor và image index
+  đều khớp. Query bị cắt token hoặc vector sai shape/norm bị từ chối.
+
+Output mỗi phương pháp có predictions.jsonl, timings.jsonl, report.json và results.html.
+index.html ở output root dẫn tới ba trang ảnh. run.json ghi hash code/input/index/config.
+Độ trễ cached chỉ đo retrieval; live gồm query embedding + retrieval. Cả hai loại trừ
+OpenAI planner, rerank và startup. Không dùng số này để kết luận SLO toàn pipeline.
+
+Đã chạy thử 6 câu dev thật, chọn trước 2 câu canonical có nhãn dương mỗi loại từ v2.
+Chỉ text được gửi planner; retrieval không đọc labels/answers. Đây là kiểm tra chức năng,
+không phải benchmark chất lượng: chưa báo Recall/nDCG hoặc tuyên bố tốt hơn baseline.
+Một câu dừng ở dependency_unresolved do tên entity planner không khớp catalog.
+
+Artifact: `var/retrieval-v1/selection.json`, `planner/`, `embeddings/`,
+`results/` (cached), `results-live/` (embedding trực tiếp), `report.md`.
+Bộ 60 câu planner entity giả không được dùng làm nhãn đánh giá retrieval ảnh thật.
+
+Test: `pytest -q tests/unit/test_retrieval.py` (fixture nhỏ, không mạng/model thật).
