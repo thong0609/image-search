@@ -13,7 +13,7 @@ from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_
 from image_search.embedding.settings import EmbeddingSettings
 from image_search.embedding.siglip2 import Siglip2Embedding, plan_steps
 from image_search.planner.schemas import QueryPlan
-from image_search.retrieval.runtime import load_engine, load_query_vectors
+from image_search.retrieval.runtime import load_engine
 from image_search.retrieval.settings import RetrievalSettings
 
 
@@ -83,9 +83,6 @@ def write_gallery(path, predictions, corpus):
 def main():
     parser = argparse.ArgumentParser(description="Retrieval từ kế hoạch planner đã lưu")
     parser.add_argument("plans", type=Path, help="File predictions.jsonl của planner")
-    parser.add_argument(
-        "--embeddings", type=Path, help="Thư mục embedding đã tạo; không nạp encoder"
-    )
     parser.add_argument("--method", choices=("vector", "keyword", "hybrid", "all"), default="all")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
@@ -107,13 +104,8 @@ def main():
         aliases = read_json(args.aliases) if args.aliases else None
         started = time.perf_counter()
         engine, corpus, index = load_engine(embedding_settings, settings, aliases)
-        mapping = (
-            load_query_vectors(args.embeddings, args.plans, rows, index)
-            if args.embeddings
-            else None
-        )
         encoder = None
-        if active_steps and args.method != "keyword" and mapping is None:
+        if active_steps and args.method != "keyword":
             encoder = Siglip2Embedding(embedding_settings)
         startup_seconds = time.perf_counter() - started
         methods = ("vector", "keyword", "hybrid") if args.method == "all" else (args.method,)
@@ -127,11 +119,8 @@ def main():
                 "rounds": args.rounds,
                 "seed": args.seed,
                 "manifest_sha256": file_hash(embedding_settings.manifest),
-                "image_index_sha256": file_hash(embedding_settings.index_dir / "index.json"),
+                "image_index_sha256": index["index_sha256"],
                 "keyword_index_sha256": file_hash(settings.keyword_dir / "index.json"),
-                "query_embedding_sha256": file_hash(args.embeddings / "embedding.json")
-                if args.embeddings
-                else None,
                 "aliases_sha256": file_hash(args.aliases) if args.aliases else None,
                 "startup_seconds": startup_seconds,
                 "planner_called": False,
@@ -145,13 +134,10 @@ def main():
             plan = QueryPlan.model_validate(row["plan"])
             vectors = None
             if not plan.needs_clarification and method != "keyword":
-                if mapping is not None:
-                    vectors = mapping[row["query_id"]]
-                else:
-                    array, details = encoder.encode_texts([s.search_text for s in plan.steps])
-                    if any(d["truncated"] for d in details):
-                        raise ValueError("Query bị cắt token; không tiếp tục retrieval")
-                    vectors = {s.id: v for s, v in zip(plan.steps, array, strict=True)}
+                array, details = encoder.encode_texts([s.search_text for s in plan.steps])
+                if any(d["truncated"] for d in details):
+                    raise ValueError("Query bị cắt token; không tiếp tục retrieval")
+                vectors = {s.id: v for s, v in zip(plan.steps, array, strict=True)}
             return engine.execute(plan, method, vectors)
 
         links = []
@@ -214,9 +200,7 @@ def main():
                         else None
                         for p in (50, 90, 95)
                     },
-                    "scope": "retrieval_only_with_precomputed_embeddings"
-                    if args.embeddings
-                    else "embedding_and_retrieval"
+                    "scope": "embedding_and_retrieval"
                     if method != "keyword"
                     else "keyword_retrieval",
                     "excludes": ["OpenAI planner", "reranking", "startup/index/model loading"],

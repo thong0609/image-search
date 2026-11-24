@@ -1,18 +1,19 @@
 # ruff: noqa: E402
-import copy
 
 import pytest
 
 np = pytest.importorskip("numpy")
 
 from image_search.baseline.keyword import build_documents, prepare_bm25
-from image_search.baseline.utils import file_hash, write_json, write_jsonl
 from image_search.baseline.vectors import normalize
-from image_search.embedding.siglip2 import plan_steps
 from image_search.retrieval.catalog import Catalog
 from image_search.retrieval.engine import RetrievalEngine
-from image_search.retrieval.runtime import load_query_vectors
 from image_search.retrieval.settings import RetrievalSettings
+
+pytestmark = [
+    pytest.mark.filterwarnings("ignore:Payload indexes:UserWarning"),
+    pytest.mark.filterwarnings("ignore:Local mode performs exact:UserWarning"),
+]
 
 
 def make_step(sid="s1", target="t1", action="retrieve_images", mention=None, deps=None):
@@ -63,7 +64,14 @@ def engine():
     vectors = normalize([[1, 0], [0, 1], [0.99, 0.01], [0.01, 0.99], [1, 0], [-1, 0]])
     keyword = prepare_bm25(build_documents(rows, ids), 1.2, 0.75)
     settings = RetrievalSettings(_env_file=None, bridge_candidates=3, bridge_entities=2)
-    return RetrievalEngine(ids, vectors, keyword, Catalog(rows, ids), settings)
+    from qdrant_client import QdrantClient
+
+    from image_search.adapters.qdrant.vectors import QdrantVectors
+
+    catalog = Catalog(rows, ids)
+    store = QdrantVectors(QdrantClient(":memory:"), "test-images", "test-index", 2)
+    store.upload(ids, vectors, catalog, "test", "test")
+    return RetrievalEngine(ids, store, keyword, catalog, settings)
 
 
 @pytest.mark.parametrize("method", ["vector", "keyword", "hybrid"])
@@ -139,41 +147,6 @@ def test_aliases_are_explicit_and_validate_catalog_ids(engine):
     assert catalog.resolve("chi nhanh an") == {"A"}
     with pytest.raises(ValueError, match="Alias"):
         Catalog(rows, engine.image_ids, {"An": ["unknown"]})
-
-
-def test_query_embeddings_cannot_be_reused_for_different_plans(tmp_path):
-    predictions = [{"query_id": "q1", "status": "ok", "plan": make_plan([make_step()])}]
-    source = tmp_path / "plans.jsonl"
-    write_jsonl(source, predictions)
-    rows, _ = plan_steps(predictions)
-    rows[0].update(truncated=False)
-    write_jsonl(tmp_path / "steps.jsonl", rows)
-    np.save(tmp_path / "vectors.npy", np.array([[1, 0]], dtype=np.float32))
-    index = {
-        "config": {"model": "test", "revision": "a" * 40, "preprocessing": "test", "libraries": {}},
-        "vector_sha256": "images",
-        "processor_sha256": "processor",
-        "shape": [2, 2],
-    }
-    metadata = {
-        **index["config"],
-        "input_sha256": file_hash(source),
-        "image_vectors_sha256": "images",
-        "processor_sha256": "processor",
-        "vectors_sha256": file_hash(tmp_path / "vectors.npy"),
-        "steps_sha256": file_hash(tmp_path / "steps.jsonl"),
-    }
-    write_json(tmp_path / "embedding.json", metadata)
-    mapping = load_query_vectors(tmp_path, source, predictions, index)
-    assert np.array_equal(mapping["q1"]["s1"], [1, 0])
-    changed = copy.deepcopy(predictions)
-    changed[0]["plan"]["steps"][0]["search_text"] = "khác"
-    with pytest.raises(ValueError, match="mapping"):
-        load_query_vectors(tmp_path, source, changed, index)
-    with (tmp_path / "vectors.npy").open("ab") as output:
-        output.write(b"changed")
-    with pytest.raises(ValueError, match="thay đổi"):
-        load_query_vectors(tmp_path, source, predictions, index)
 
 
 @pytest.mark.parametrize("method", ["vector", "keyword", "hybrid"])

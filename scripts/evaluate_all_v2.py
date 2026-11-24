@@ -18,7 +18,6 @@ from image_search.baseline.vectors import (
     load_encoder,
     load_index,
     processor_hash,
-    rank_images,
 )
 
 ROOT = Path("var/benchmark-v2")
@@ -34,7 +33,7 @@ def main():
         assert file_hash(item["path"]) == item["sha256"]
     source_path = manifest["source_manifest"]
     assert file_hash(source_path) == manifest["source_manifest_sha256"]
-    corpus, index, vectors = load_index(source_path, "var/index-v1")
+    corpus, index, store = load_index(source_path)
     queries = read_jsonl(ROOT / "queries.jsonl")
     answers = {a["query_id"]: a for a in read_jsonl(ROOT / "answers.jsonl")}
     valid_ids = set(index["image_ids"])
@@ -69,7 +68,7 @@ def main():
         OUTPUT / "experiment.json",
         {
             "manifest_sha256": file_hash(ROOT / "evaluation-manifest.json"),
-            "vector_index_sha256": file_hash("var/index-v1/index.json"),
+            "vector_index_sha256": index["index_sha256"],
             "keyword_index_sha256": file_hash("var/hybrid-v1/keyword-index/index.json"),
             "script_sha256": file_hash(Path(__file__)),
             "config": options,
@@ -87,7 +86,7 @@ def main():
         dense, sparse = [], []
         if method != "keyword":
             encoded = encode_text(text, model, processor)
-            dense = rank_images(encoded, vectors, index["image_ids"], count)
+            dense = store.search(encoded, count, set(index["image_ids"]))
         if method != "vector":
             sparse = keyword_search(text, keyword, count)
         if method == "hybrid":

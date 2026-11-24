@@ -37,7 +37,9 @@ def encoder(monkeypatch):
     from image_search.embedding import siglip2
 
     metadata = {"config": {"model": "test", "revision": "a" * 40}, "processor_sha256": "test"}
-    monkeypatch.setattr(siglip2, "load_index", lambda *_: ({}, metadata, np.ones((2, 2))))
+    monkeypatch.setattr(
+        siglip2, "load_index", lambda *_: ({}, metadata, SimpleNamespace(dimensions=2))
+    )
     monkeypatch.setattr(siglip2, "load_encoder", lambda *_: (Model(), Processor()))
     monkeypatch.setattr(siglip2, "processor_hash", lambda _: "test")
     return Siglip2Embedding(EmbeddingSettings(_env_file=None, batch_size=2))

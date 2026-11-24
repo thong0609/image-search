@@ -1,7 +1,7 @@
 # Chạy baseline
 
 Code dùng các hàm thông thường, chia file theo từng công việc. Chạy lệnh từ thư mục repo.
-Baseline CLI không cần API, frontend, PostgreSQL hay Qdrant.
+Baseline CLI cần Qdrant cho vector; không cần API, frontend hoặc PostgreSQL.
 
 Cấu hình nằm trong class `BaselineSettings` ở `src/image_search/baseline/settings.py`.
 Thứ tự ưu tiên: tham số CLI → biến môi trường → `.env` → mặc định trong class.
@@ -121,8 +121,8 @@ Phương pháp mặc định `--method vector` không dịch câu, tách mục t
 graph hoặc reranker. Có thể chọn keyword/hybrid để so sánh riêng như hướng dẫn dưới.
 
 Vector ảnh/văn bản được chuẩn hóa L2, xếp hạng cosine; bằng điểm thì theo image_id tăng dần.
-`var/index/` chứa `images.npy`, danh sách ID, phiên bản thư viện và cấu hình tiền xử lý.
-Chạy lại dùng index cũ nếu tương thích; đổi model/revision/benchmark cần `--index-dir` mới.
+Qdrant chứa vector, danh sách ID, phiên bản thư viện và cấu hình tiền xử lý.
+Chạy lại dùng collection cũ nếu tương thích; đổi model/revision/benchmark cần `--collection` mới.
 Nếu đổi model, truyền cả `--model` và `--revision` (commit SHA 40 ký tự), chọn trên dev.
 `--threads` mặc định 4; giảm batch size nếu thiếu RAM.
 
@@ -176,9 +176,9 @@ Test vector/model được skip khi không cài extra `baseline`.
 Giữ nguyên manifest/query/đáp án và vector index khi so sánh. Ví dụ với benchmark v1:
 
 ```bash
-uv run --extra baseline image-search-baseline run --manifest var/benchmark-v1/benchmark.json --index-dir var/index-v1 --method vector --split dev --output-dir var/compare/dev/vector
-uv run --extra baseline image-search-baseline run --manifest var/benchmark-v1/benchmark.json --index-dir var/index-v1 --method keyword --split dev --output-dir var/compare/dev/keyword
-uv run --extra baseline image-search-baseline run --manifest var/benchmark-v1/benchmark.json --index-dir var/index-v1 --method hybrid --split dev --output-dir var/compare/dev/hybrid
+uv run --extra baseline image-search-baseline run --manifest var/benchmark-v1/benchmark.json --collection image_search_siglip2_v1 --method vector --split dev --output-dir var/compare/dev/vector
+uv run --extra baseline image-search-baseline run --manifest var/benchmark-v1/benchmark.json --collection image_search_siglip2_v1 --method keyword --split dev --output-dir var/compare/dev/keyword
+uv run --extra baseline image-search-baseline run --manifest var/benchmark-v1/benchmark.json --collection image_search_siglip2_v1 --method hybrid --split dev --output-dir var/compare/dev/hybrid
 ```
 
 Keyword dùng BM25 với `k1=1.2`, `b=0.75`, trên bốn trường nguồn: `entity_name`,
@@ -199,7 +199,7 @@ Rank bắt đầu từ 1; ảnh vắng ở nhánh nào không nhận điểm t�
 60, không phải số kết quả top-K. Bằng điểm thì xếp theo image_id. Câu hỏi vẫn đi nguyên
 câu vào cả hai nhánh; chưa có tách mục tiêu, graph hoặc reranker.
 
-Keyword index mặc định ở `<index-dir>/keyword/` (đổi bằng `--keyword-dir`), gồm document,
+Keyword index mặc định ở `var/hybrid-v1/keyword-index/` (đổi bằng `--keyword-dir`), gồm document,
 hash dữ liệu và cấu hình. Nó được tạo ở lần chạy đầu; đổi tokenizer/field/k1/b/corpus
 cần thư mục keyword mới. Nhánh keyword không nạp encoder; hiện dùng cùng lệnh và vector
 index đã có để kiểm tra corpus/thứ tự ID cho phép so sánh nhất quán.
@@ -235,50 +235,18 @@ Mỗi lần thay corpus hoặc nhãn cần phiên bản benchmark mới.
 
 ## Embedding cho retrieval
 
-Bước 3 hiện có `src/image_search/embedding/`: settings, encoder và CLI đơn giản.
-Tái sử dụng `var/index-v1/images.npy`, checkpoint SigLIP2/revision và processor hash
-của baseline; không tự đổi model/tiền xử lý hoặc mã hóa lại toàn kho.
-
-- Ảnh: 1.886 vector float32, 768 chiều, chuẩn hóa L2; giữ thứ tự image ID theo index.
-- Text: mã hóa `search_text` riêng cho từng bước `resolve_entity`/`retrieve_images`.
-  Giữ query ID, step ID, target ID và dependency trong `steps.jsonl` để executor dùng sau.
-- Câu cần làm rõ/planner lỗi được bỏ qua với lý do, không tạo vector giả.
-- Batch text dùng padding/truncation giống baseline; ghi token_count/truncated cho từng bước.
-  Text vượt 64 token bị cắt theo cấu hình model, cần rà trước khi đánh giá retrieval.
-- Embedding chưa thực thi entity lookup, bridge, lọc ảnh, retrieval hoặc reranking.
-
-Từ repository root sau khi cài `--extra baseline` (kèm `--extra planner` để giữ SDK):
+SigLIP2 dùng model/revision và processor hash từ metadata trong Qdrant.
+Mỗi bước planner được mã hóa riêng; vector query chỉ ở RAM, không tạo cache trên đĩa.
+CLI ghi `steps.jsonl` giữ query/step/target/dependency và báo cáo `embedding.json`.
+Các bước bị cắt token hoặc có vector sai shape/norm bị từ chối trước retrieval.
 
 ```bash
-HF_HUB_OFFLINE=1 image-search-embedding check --output-dir var/embeddings/siglip2/check-new
-HF_HUB_OFFLINE=1 image-search-embedding text "ảnh mặt tiền cửa hàng" --output-dir var/embeddings/siglip2/text-new
-HF_HUB_OFFLINE=1 image-search-embedding benchmark var/planner-v2/dev/predictions.jsonl --rounds 3 --output-dir var/embeddings/siglip2/benchmark-new
+HF_HUB_OFFLINE=1 image-search-embedding check --output-dir var/embedding-check
+HF_HUB_OFFLINE=1 image-search-embedding text "ảnh mặt tiền cửa hàng" --output-dir var/embedding-text
 ```
 
-Output mới không được tồn tại. Tham số `--threads`, `--batch-size`, `--manifest`,
-`--index-dir` đặt TRƯỚC subcommand; class `EmbeddingSettings` đọc namespace
-`IMAGE_SEARCH_EMBEDDING_` trong `.env`. Chạy `python -m image_search.embedding` tương đương CLI.
-
-Đã kiểm tra hash/norm/order toàn index và mã hóa lại 3 ảnh mẫu: sai số tối đa 3,28e-7.
-Đã mã hóa plan v2 dev/test: 46/47 text vector, mỗi split bỏ 3 câu cần làm rõ,
-không text nào bị cắt. So 3 text mỗi split với `encode_text` baseline đều khớp.
-
-| Embedding toàn bộ bước của một plan | p50 ms | p90 ms | p95 ms |
-|---|---:|---:|---:|
-| Dev (27 plan) | 86,88 | 95,82 | 106,26 |
-| Test (27 plan) | 91,98 | 132,78 | 135,07 |
-
-Ba vòng sau warmup, CPU 4 threads, batch tối đa 8, OPENBLAS_NUM_THREADS=1,
-không cache vector. Không gồm planner, retrieval, rerank, nạp model hoặc kiểm tra index.
-Không kết luận SLO toàn pipeline từ số đo riêng này. Bộ plan tổng hợp có entity giả,
-chỉ dùng kiểm tra mapping/vector và thời gian, chưa đo chất lượng tìm ảnh thật.
-
-Artifact local: `var/embeddings/siglip2/report.md`, `verification.json`,
-`check-v1/`, `planner-v2-dev/`, `planner-v2-test/`. Source CLI lúc đo giữ trong
-`executed-cli.py`; source sau đó chỉ sửa xuống dòng để đạt lint.
-
-Kiểm tra code: `pytest -q tests/unit/test_embedding.py` (test giả, không tải model).
-Tài liệu model: [SigLIP2 Transformers](https://huggingface.co/docs/transformers/model_doc/siglip2).
+`check` mã hóa lại ảnh mẫu và so với vector lấy từ Qdrant.
+Các tham số `--threads`, `--batch-size`, `--manifest` đặt trước subcommand.
 
 
 ## Retrieval theo kế hoạch
@@ -289,7 +257,6 @@ Dùng dependencies baseline; giữ thêm extra planner nếu còn chạy planner
 
 ```bash
 uv sync --frozen --extra baseline --extra planner
-image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --embeddings var/retrieval-v1/embeddings --method all --output-dir var/retrieval-v1/new-cached
 HF_HUB_OFFLINE=1 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/retrieval-v1/new-live
 ```
 
@@ -315,12 +282,12 @@ Không ghi đè output đã có. Dùng settings `IMAGE_SEARCH_EMBEDDING_` để 
   Đây là traversal ứng viên qua metadata image–entity, chưa là graph facts/VLM xác nhận.
 - Planner lỗi/cần làm rõ, entity mâu thuẫn hoặc không có bridge đều có trạng thái riêng.
   Không tạo vector, entity hay ảnh giả để lấp kết quả.
-- Cache vector chỉ được dùng nếu hash input, row mapping, model, processor và image index
-  đều khớp. Query bị cắt token hoặc vector sai shape/norm bị từ chối.
+- Query được mã hóa khi chạy; không lưu hoặc đọc cache vector trên đĩa.
+  Query bị cắt token hoặc vector sai shape/norm bị từ chối.
 
 Output mỗi phương pháp có predictions.jsonl, timings.jsonl, report.json và results.html.
 index.html ở output root dẫn tới ba trang ảnh. run.json ghi hash code/input/index/config.
-Độ trễ cached chỉ đo retrieval; live gồm query embedding + retrieval. Cả hai loại trừ
+Độ trễ gồm query embedding + retrieval, loại trừ
 OpenAI planner, rerank và startup. Không dùng số này để kết luận SLO toàn pipeline.
 
 Đã chạy thử 6 câu dev thật, chọn trước 2 câu canonical có nhãn dương mỗi loại từ v2.
@@ -328,7 +295,7 @@ Chỉ text được gửi planner; retrieval không đọc labels/answers. Đây
 không phải benchmark chất lượng: chưa báo Recall/nDCG hoặc tuyên bố tốt hơn baseline.
 Một câu dừng ở dependency_unresolved do tên entity planner không khớp catalog.
 
-Artifact: `var/retrieval-v1/selection.json`, `planner/`, `embeddings/`,
+Artifact lịch sử: `var/retrieval-v1/selection.json`, `planner/`,
 `results/` (cached), `results-live/` (embedding trực tiếp), `report.md`.
 Bộ 60 câu planner entity giả không được dùng làm nhãn đánh giá retrieval ảnh thật.
 
@@ -365,7 +332,6 @@ Cùng lệnh retrieval, thêm hai settings `IMAGE_SEARCH_RETRIEVAL_PATHS_PER_ENT
 `IMAGE_SEARCH_RETRIEVAL_PATH_COMBINATION_LIMIT` nếu cần thay giới hạn.
 
 ```bash
-OPENBLAS_NUM_THREADS=1 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --embeddings var/retrieval-v1/embeddings --method all --output-dir var/executor-v1/new-cached
 HF_HUB_OFFLINE=1 OPENBLAS_NUM_THREADS=1 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/executor-v1/new-live
 ```
 
@@ -374,3 +340,34 @@ lại API. Artifact mới ở `var/executor-v1/`: `cached/`, `live/`, `index.htm
 và `verification.json`. HTML hiển thị từng giả thuyết và các đường bằng chứng.
 Phép đo tính cả kế hoạch unresolved/partial; không loại chúng để làm đẹp p90.
 Chưa đánh giá chất lượng retrieval toàn tập. Xác minh thị giác/rerank thuộc bước 6.
+
+
+## Lưu vector vào Qdrant
+
+Vector ảnh và metadata index chỉ lưu trong Qdrant; không có backend NumPy hoặc
+cache vector trên đĩa. Query embedding chỉ ở RAM. BM25 và RRF chuẩn 1:1 giữ nguyên.
+
+```bash
+docker compose up -d qdrant
+uv sync --frozen --extra baseline --extra planner
+uv run image-search-qdrant
+```
+
+Lệnh lập index trực tiếp từ ảnh; nếu collection đã có, kiểm tra và dùng lại.
+Collection khác model/revision/corpus bị từ chối; dùng tên collection mới khi đổi model.
+
+- URL: `http://localhost:6333`; Dashboard: <http://localhost:6333/dashboard>.
+- Collection ảnh: `image_search_siglip2_v1`, 1.886 vector, 768 chiều, cosine.
+- Collection metadata: `image_search_siglip2_v1_metadata`, một bản ghi cấu hình
+  model/revision, processor, image IDs, kích thước và fingerprint index.
+- Dữ liệu bền vững: Docker volume `images-search_qdrant-data`, mount `/qdrant/storage`.
+- Ảnh gốc: `var/images/`; BM25 metadata: `var/hybrid-v1/keyword-index/`.
+
+Cấu hình: `IMAGE_SEARCH_QDRANT_URL`, `IMAGE_SEARCH_RETRIEVAL_QDRANT_COLLECTION`.
+Tìm cosine với `exact=True`, lọc phạm vi trước top-K; chưa đánh giá ANN/HNSW.
+Qdrant không chạy hoặc thiếu dữ liệu => báo lỗi, không tự chuyển backend.
+Không chạy `docker compose down -v` nếu muốn giữ dữ liệu.
+
+Các file vector và cache cũ đã được xóa; báo cáo benchmark lịch sử vẫn được giữ
+và không đại diện cho phép đo lại sau chuyển đổi. Kiểm tra live sau khi bỏ file
+vector: `var/qdrant-v1/verification-live.json`, `var/qdrant-v1/live/index.html`.

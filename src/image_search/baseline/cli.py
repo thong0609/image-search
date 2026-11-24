@@ -12,7 +12,7 @@ from image_search.baseline.vectors import build_index, search_index
 
 def add_index_arguments(parser):
     parser.add_argument("--manifest", type=Path, default=Path("var/benchmark.json"))
-    parser.add_argument("--index-dir", type=Path, default=Path("var/index"))
+    parser.add_argument("--collection", default=None)
     parser.add_argument("--threads", type=int, default=4)
 
 
@@ -106,7 +106,7 @@ def main():
         elif args.command == "index":
             build_index(
                 args.manifest,
-                args.index_dir,
+                args.collection,
                 args.model,
                 args.revision,
                 args.batch_size,
@@ -115,7 +115,7 @@ def main():
         elif args.command == "search":
             search_index(
                 args.manifest,
-                args.index_dir,
+                args.collection,
                 text=args.text,
                 top_k=args.top_k,
                 threads=args.threads,
@@ -128,7 +128,7 @@ def main():
         elif args.command == "run":
             output = search_index(
                 args.manifest,
-                args.index_dir,
+                args.collection,
                 split=args.split,
                 seed=args.seed,
                 threads=args.threads,
