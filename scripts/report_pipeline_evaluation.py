@@ -121,6 +121,8 @@ def main():
     run = read_json(root / "run.json")["configuration"]
     done = read_json(root / "completed.json")
     queries, answers = read_jsonl(run["queries"]), read_jsonl(run["answers"])
+    if run.get("split", "all") != "all":
+        queries = [q for q in queries if q["split"] == run["split"]]
     assert file_hash(root / "executed-runner.py") == run["runner_sha256"]
     assert file_hash(run["queries"]) == run["queries_sha256"]
     assert file_hash(run["answers"]) == run["answers_sha256"]
@@ -174,7 +176,7 @@ def main():
     assert reference_run["config"]["rrf_k"] == run["retrieval"]["rrf_k"]
     assert reference_run["config"]["candidates"] == run["retrieval"]["candidates"]
     baseline_rows = read_jsonl(baseline_root / "hybrid/predictions.jsonl")
-    baseline = {p["query_id"]: p for p in baseline_rows}
+    baseline = {p["query_id"]: p for p in baseline_rows if p["query_id"] in pred}
     assert set(baseline) == set(pred)
     baseline_scores = [
         score_query(q, answer_map[q["query_id"]], baseline[q["query_id"]]["results"])
@@ -185,7 +187,7 @@ def main():
         "baseline_rrf": aggregate(positive, baseline_scores),
     }
     keyword_rows = read_jsonl(baseline_root / "keyword/predictions.jsonl")
-    keyword_map = {p["query_id"]: p for p in keyword_rows}
+    keyword_map = {p["query_id"]: p for p in keyword_rows if p["query_id"] in pred}
     assert set(keyword_map) == set(pred)
     keyword_scores = [
         score_query(q, answer_map[q["query_id"]], keyword_map[q["query_id"]]["results"])
@@ -243,9 +245,11 @@ def main():
     ]
     write_json(root / "catalog-negatives.json", negatives)
     lines = [
-        "# Đánh giá pipeline RRF v1",
+        "# Đánh giá pipeline RRF",
         "",
-        f"{len(queries)} câu; {len(positive)} dương có nhãn; 42 unknown không chấm retrieval; 2 âm catalog báo riêng.",
+        f"{len(queries)} câu; {len(positive)} dương có nhãn; "
+        f"{sum(q['answerable'] is None for q in queries)} unknown không chấm retrieval; "
+        f"{sum(q['answerable'] is False for q in queries)} âm catalog báo riêng.",
         "Model và dữ liệu được giữ theo run.json. Không rerank hoặc tune theo kết quả.",
         "Labels v2 là ứng viên, chưa duyệt độc lập; test/corpus đã từng được xem.",
         "",
@@ -297,7 +301,7 @@ def main():
         write_gallery(root / f"results-{kind}.html", selected, source_manifest)
         links.append(f'<li><a href="results-{kind}.html">{kind}</a></li>')
     (root / "index.html").write_text(
-        '<meta charset="utf-8"><h1>Pipeline RRF v1</h1><p>Kết quả 400 câu; nhãn còn là ứng viên.</p><ul>'
+        f'<meta charset="utf-8"><h1>Pipeline RRF</h1><p>Kết quả {len(queries)} câu; nhãn còn là ứng viên.</p><ul>'
         + "".join(links)
         + "</ul>"
     )

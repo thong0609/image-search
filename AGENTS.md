@@ -45,3 +45,10 @@ Never commit credentials, API keys, or private image data. Document required con
 - At task completion, explicitly report missing information, assumptions made,
   and deviations from the approved plan (state none when applicable).
 - Keep implementation simple and explanations concise.
+- Treat metadata of records marked approve=yes as trusted; do not add external
+  source verification. Build entity relations from what the metadata states.
+- The revised graph must focus on entities and their relations, without
+  SourceRecord, SourcePage, or SourceLabel nodes. Keep search metadata in Qdrant.
+
+- Current graph extraction is authored directly by Codex from trusted dataset metadata.
+  Do not call paid extraction APIs without a new request; online planner is separate.

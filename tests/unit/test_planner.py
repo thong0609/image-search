@@ -255,3 +255,60 @@ def test_dependency_shape_misses_bridge_when_route_changes_to_direct_lookup():
     result = score_case(plan, {"status": "ok", "plan": direct})
     assert not result["dependencies_correct"]
     assert not result["plan_correct"]
+
+
+def test_graph_anchor_cannot_cross_targets_or_ignore_dependencies():
+    plan = expected("multi-hop")
+    step = plan["steps"][0]
+    step["graph"] = {
+        "target_name": None,
+        "target_kind": "place",
+        "target_category": None,
+        "match": "all",
+        "conditions": [
+            {
+                "relations": ["LOCATED_IN"],
+                "direction": "out",
+                "anchor_name": None,
+                "anchor_step_id": "not-present",
+            }
+        ],
+    }
+    with pytest.raises(ValidationError, match="dependencies"):
+        QueryPlan.model_validate(plan)
+
+
+def test_client_uses_official_openai_endpoint_and_key(monkeypatch):
+    from image_search.planner import router
+
+    captured = []
+
+    def handler(request):
+        captured.append((request.url.host, request.url.path, request.headers["authorization"]))
+        return httpx.Response(200, json=response_payload())
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://wrong.example/v1")
+    monkeypatch.setattr(
+        router,
+        "OpenAI",
+        lambda **kwargs: OpenAI(
+            **kwargs, http_client=httpx.Client(transport=httpx.MockTransport(handler))
+        ),
+    )
+    settings = PlannerSettings(_env_file=None, OPENAI_API_KEY="test-key")
+    with make_client(settings) as client:
+        result = route_query("Tìm ảnh cửa hàng A", settings, client)
+    assert result["status"] == "ok"
+    assert captured == [("api.openai.com", "/v1/responses", "Bearer test-key")]
+    assert "test-key" not in json.dumps(settings.model_dump(mode="json", exclude={"api_key"}))
+
+
+def test_missing_usage_fields_do_not_invent_cost():
+    from types import SimpleNamespace
+
+    from image_search.planner.router import usage_details
+
+    settings = PlannerSettings(_env_file=None, input_price=1, output_price=2)
+    result = usage_details(SimpleNamespace(usage=SimpleNamespace()), settings)
+    assert result["estimated_cost_usd"] is None
+    assert result["input_tokens"] is None

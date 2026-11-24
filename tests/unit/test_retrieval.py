@@ -63,7 +63,7 @@ def engine():
     ids = ["ag", "ai", "bg", "bi", "00-conflict", "other"]
     vectors = normalize([[1, 0], [0, 1], [0.99, 0.01], [0.01, 0.99], [1, 0], [-1, 0]])
     keyword = prepare_bm25(build_documents(rows, ids), 1.2, 0.75)
-    settings = RetrievalSettings(_env_file=None, bridge_candidates=3, bridge_entities=2)
+    settings = RetrievalSettings(_env_file=None)
     from qdrant_client import QdrantClient
 
     from image_search.adapters.qdrant.vectors import QdrantVectors
@@ -103,34 +103,6 @@ def test_multi_target_groups_and_counts_are_preserved(engine):
     assert result["groups"][1]["results"] == []
 
 
-def test_hop_keeps_multiple_entity_hypotheses_and_excludes_bridge_images(engine):
-    bridge = make_step(action="resolve_entity")
-    end = make_step("s2", deps=["s1"])
-    result = engine.execute(
-        make_plan([bridge, end], "multi-hop"),
-        "vector",
-        {"s1": np.array([1, 0]), "s2": np.array([0, 1])},
-    )
-    assert set(result["trace"][0]["entity_hypotheses"]) == {"A", "B"}
-    assert "00-conflict" in result["trace"][0]["rejected_bridge_images"]
-    group = result["groups"][0]
-    assert group["entity_hypotheses_unverified"]
-    assert {r["image_id"] for r in group["candidates"]} >= {"ai", "bi"}
-    assert all(r["image_id"] not in ("ag", "bg", "other") for r in group["candidates"])
-    assert next(r for r in group["candidates"] if r["image_id"] == "bi")["bridge_image_ids"] == [
-        "bg"
-    ]
-
-
-def test_missing_bridge_stops_dependency_without_inventing_entity(engine):
-    bridge = make_step(action="resolve_entity", mention="Không có")
-    end = make_step("s2", deps=["s1"])
-    result = engine.execute(make_plan([bridge, end], "multi-hop"), "keyword")
-    assert result["trace"][0]["entity_hypotheses"] == {}
-    assert result["groups"][0]["status"] == "dependency_unresolved"
-    assert result["groups"][0]["results"] == []
-
-
 def test_clarification_does_not_search(engine, monkeypatch):
     monkeypatch.setattr(engine, "search", lambda *_: pytest.fail("Không được tìm ảnh"))
     result = engine.execute(make_plan([], clarify=True))
@@ -165,15 +137,6 @@ def test_keyword_path_does_not_require_vectors(engine):
     assert result["groups"][0]["results"][0]["image_id"] == "ai"
 
 
-def test_uncertain_caption_cannot_be_used_as_confirmed_bridge(engine):
-    engine.catalog.uncertain.update(engine.image_ids)
-    bridge = make_step(action="resolve_entity")
-    end = make_step("s2", deps=["s1"])
-    result = engine.execute(make_plan([bridge, end], "multi-hop"), "keyword")
-    assert not result["trace"][0]["entity_hypotheses"]
-    assert result["groups"][0]["status"] == "dependency_unresolved"
-
-
 def test_unspecified_count_is_a_display_limit_not_a_requirement(engine):
     result = engine.execute(make_plan([make_step(mention="Cửa hàng A")]), "keyword")
     assert result["groups"][0]["requested_count"] is None
@@ -190,15 +153,10 @@ def test_explicit_count_reports_insufficient_candidates(engine):
 
 
 def test_ambiguous_entities_do_not_pool_counts_or_publish_mixed_results(engine):
-    bridge = make_step(action="resolve_entity")
-    bridge["conditions"] = ["cổng đỏ"]
-    end = make_step("s2", deps=["s1"])
-    end.update(count=2, conditions=["bên trong"])
-    result = engine.execute(
-        make_plan([bridge, end], "multi-hop"),
-        "vector",
-        {"s1": np.array([1, 0]), "s2": np.array([0, 1])},
-    )
+    engine.catalog.aliases["Cửa hàng chung"] = ["A", "B"]
+    step = make_step(mention="Cửa hàng chung")
+    step.update(count=2, conditions=["bên trong"])
+    result = engine.execute(make_plan([step]), "keyword")
     group = result["groups"][0]
     assert group["status"] == "ambiguous_entity"
     assert group["count_status"] == "unresolved_entity"
@@ -237,14 +195,13 @@ def test_unknown_target_condition_is_not_reported_as_verified_count(engine):
     assert group["hypotheses"][0]["metadata_supported_count"] == 0
 
 
-def test_conflicting_identity_is_quarantined_in_scoped_target_search(engine):
+def test_shared_image_retains_trusted_mapping_to_each_entity(engine):
     step = make_step(mention="Cửa hàng A")
     step["search_text"] = "ảnh"
     group = engine.execute(make_plan([step]), "keyword")["groups"][0]
-    assert group["results"] == []
-    rejected = group["hypotheses"][0]["rejected_candidates"]
-    assert rejected[0]["image_id"] == "00-conflict"
-    assert rejected[0]["evidence"]["identity_status"] == "conflicting"
+    assert group["results"][0]["image_id"] == "00-conflict"
+    assert group["hypotheses"][0]["rejected_candidates"] == []
+    assert group["verification_status"] == "supported_by_metadata"
 
 
 def test_partial_multi_target_does_not_claim_all_targets_resolved(engine):
@@ -256,50 +213,131 @@ def test_partial_multi_target_does_not_claim_all_targets_resolved(engine):
     assert not result["groups"][1]["results"]
 
 
-def test_join_paths_requires_same_entity_and_consistent_shared_ancestor():
-    from image_search.retrieval.executor import join_paths
-
-    a = {"A": [[{"step_id": "root", "image_id": "ag"}]]}
-    b = {"B": [[{"step_id": "other", "image_id": "bg"}]]}
-    assert join_paths([a, b], 2) == ({}, False)
-    conflict = {"A": [[{"step_id": "root", "image_id": "another_image"}]]}
-    assert join_paths([a, conflict], 2) == ({}, False)
-    consistent = {
-        "A": [[{"step_id": "root", "image_id": "ag"}, {"step_id": "second", "image_id": "ai"}]]
-    }
-    joined, truncated = join_paths([a, consistent], 2)
-    assert not truncated
-    assert len(joined["A"][0]) == 2
-
-
-def test_join_paths_has_bounded_work_and_reports_truncation():
-    from image_search.retrieval.executor import join_paths
-
-    a = {"A": [[{"step_id": "root", "image_id": f"a{i}"}] for i in range(5)]}
-    b = {"A": [[{"step_id": "root", "image_id": f"b{i}"}] for i in range(5)]}
-    joined, truncated = join_paths([a, b], 2, combination_limit=3)
-    assert truncated and joined == {}
-
-
-def test_unique_hop_preserves_both_bridge_and_target_evidence(engine):
-    bridge = make_step(action="resolve_entity", mention="Cửa hàng A")
-    bridge["conditions"] = ["cổng đỏ"]
-    end = make_step("s2", deps=["s1"])
-    end.update(count=1, conditions=["bên trong"])
-    result = engine.execute(make_plan([bridge, end], "multi-hop"), "keyword")
-    group = result["groups"][0]
-    assert group["count_status"] == "supported_by_metadata"
-    assert group["verification_status"] == "supported_by_metadata"
-    assert group["results"][0]["image_id"] == "ai"
-    path = group["results"][0]["evidence_paths"][0]
-    assert path["bridge_steps"][0]["image_id"] == "ag"
-    assert path["target_evidence"]["image_id"] == "ai"
-    assert path["target_evidence"]["visual_verification"] == "not_performed"
-
-
 def test_condition_evidence_keeps_vietnamese_diacritics(engine):
     from image_search.retrieval.evidence import inspect_evidence
 
     engine.catalog.records["ag"][0]["mo_ta"] = "Cổng có cây đa."
     evidence = inspect_evidence(engine.catalog, "ag", "A", ["đá"])
     assert evidence["conditions_status"] == "unverified"
+
+
+@pytest.mark.parametrize("method", ["vector", "keyword", "hybrid"])
+def test_unsupported_relation_never_runs_old_bridge_retrieval(engine, monkeypatch, method):
+    bridge = make_step(action="resolve_entity")
+    target = make_step("s2", deps=["s1"])
+    monkeypatch.setattr(engine, "search", lambda *a, **k: pytest.fail("Không chạy bridge cũ"))
+    result = engine.execute(make_plan([bridge, target], "multi-hop"), method)
+    assert result["status"] == "unsupported_graph_relation"
+    assert result["groups"][0]["status"] == "unsupported_graph_relation"
+    assert result["groups"][0]["results"] == []
+    assert result["trace"][0]["entity_ids"] == []
+
+
+def test_multi_target_keeps_direct_target_when_other_target_needs_relation(engine):
+    direct = make_step(mention="Cửa hàng A")
+    bridge = make_step("s2", "t2", action="resolve_entity")
+    target = make_step("s3", "t2", deps=["s2"])
+    result = engine.execute(make_plan([direct, bridge, target], "multi-target"), "keyword")
+    assert result["status"] == "partial_results"
+    assert result["groups"][0]["results"]
+    assert result["groups"][1]["status"] == "unsupported_graph_relation"
+
+
+def test_graph_membership_is_applied_before_qdrant_top_k(engine):
+    from unittest.mock import Mock
+
+    graph = Mock()
+    graph.images_for.return_value = {"ai"}
+    engine.graph_store = graph
+    result = engine.search("", np.array([1, 0]), "vector", 1, entity_ids={"A"})
+    assert [r["image_id"] for r in result] == ["ai"]
+    graph.images_for.assert_called_once_with({"A"})
+
+
+def test_graph_failure_does_not_run_vector_fallback(engine, monkeypatch):
+    from unittest.mock import Mock
+
+    graph = Mock()
+    graph.images_for.side_effect = ConnectionError("Neo4j unavailable")
+    engine.graph_store = graph
+    monkeypatch.setattr(
+        engine.vector_store, "search", lambda *a, **k: pytest.fail("Không fallback khi graph lỗi")
+    )
+    with pytest.raises(ConnectionError, match="Neo4j unavailable"):
+        engine.search("", np.array([1, 0]), "vector", 1, entity_ids={"A"})
+
+
+def relation_query(anchor="Thương hiệu X", step=None):
+    return {
+        "target_name": None,
+        "target_kind": "place",
+        "target_category": "cửa hàng",
+        "match": "all",
+        "conditions": [
+            {
+                "relations": ["BRANCH_OF"],
+                "direction": "out",
+                "anchor_name": anchor,
+                "anchor_step_id": step,
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize("method", ["vector", "keyword", "hybrid"])
+def test_graph_selected_entities_share_one_ranked_pool_and_filter_before_topk(engine, method):
+    from unittest.mock import Mock
+
+    graph = Mock()
+    graph.select.return_value = {"status": "resolved", "entity_ids": ["canonical-A", "canonical-B"]}
+    graph.source_ids.return_value = {"A", "B"}
+    graph.images_for.return_value = {"ag", "ai", "bg", "bi", "00-conflict"}
+    engine.graph_store = graph
+    bridge = make_step(action="resolve_entity")
+    bridge["graph"] = relation_query()
+    target = make_step("s2", deps=["s1"])
+    target["count"] = 2
+    result = engine.execute(
+        make_plan([bridge, target], "multi-hop"), method, {"s2": np.array([0, 1])}
+    )
+    group = result["groups"][0]
+    assert group["status"] == "candidates"
+    assert {r["image_id"] for r in group["results"]} == {"ai", "bi"}
+    assert group["count_status"] == "satisfied"
+    graph.images_for.assert_called_once_with({"A", "B"})
+    assert "other" not in {r["image_id"] for r in group["candidates"]}
+
+
+def test_graph_dependency_passes_resolved_ids_and_missing_match_never_searches(engine):
+    from unittest.mock import Mock
+
+    graph = Mock()
+    graph.select.side_effect = [
+        {"status": "resolved", "entity_ids": ["brand"]},
+        {"status": "no_graph_match", "entity_ids": []},
+    ]
+    engine.graph_store = graph
+    first = make_step(action="resolve_entity")
+    first["graph"] = {**relation_query(), "target_name": "Thương hiệu X", "conditions": []}
+    second = make_step("s2", action="resolve_entity", deps=["s1"])
+    second["graph"] = relation_query(anchor=None, step="s1")
+    target = make_step("s3", deps=["s2"])
+    result = engine.execute(make_plan([first, second, target], "multi-hop"), "keyword")
+    assert graph.select.call_args.args[1]["s1"] == {"brand"}
+    assert result["groups"][0]["status"] == "no_graph_match"
+    assert result["groups"][0]["results"] == []
+    graph.source_ids.assert_not_called()
+
+
+def test_visual_condition_in_resolve_step_is_not_silently_ignored(engine):
+    from unittest.mock import Mock
+
+    graph = Mock()
+    engine.graph_store = graph
+    bridge = make_step(action="resolve_entity")
+    bridge.update(graph=relation_query(), conditions=["cổng đỏ"])
+    result = engine.execute(
+        make_plan([bridge, make_step("s2", deps=["s1"])], "multi-hop"), "keyword"
+    )
+    assert result["status"] == "unsupported_graph_relation"
+    graph.select.assert_not_called()

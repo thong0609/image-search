@@ -262,27 +262,23 @@ HF_HUB_OFFLINE=1 image-search-retrieval var/retrieval-v1/planner/predictions.jso
 Input là JSONL kết quả planner (`query_id`, `status`, `plan`, `text` tùy chọn).
 `--method` chọn vector/keyword/hybrid/all; `--rounds` mặc định 3, seed 42.
 Không ghi đè output đã có. Dùng `IMAGE_SEARCH_RETRIEVAL_QDRANT_COLLECTION` để chọn collection,
-`IMAGE_SEARCH_EMBEDDING_` cho encoder và `IMAGE_SEARCH_RETRIEVAL_` cho shortlist/bridge.
+`IMAGE_SEARCH_EMBEDDING_` cho encoder và `IMAGE_SEARCH_RETRIEVAL_` cho shortlist.
 Model và processor phải khớp image index.
 
 - Vector cosine, BM25 và RRF chuẩn 1:1 dùng lại thuật toán baseline.
-- Named entity tra `entity_name_keys` trực tiếp trong Qdrant: chuẩn hóa không dấu/hoa thường/dấu câu, không substring/fuzzy.
+- Named entity được tra qua Neo4j theo tên chuẩn hóa; Qdrant giữ metadata lọc/ảnh.
   Có thể cấp `--aliases file.json` theo dạng alias -> list entity ID thật trong catalog.
-  Không đọc đáp án benchmark để tạo alias. Tên không khớp trả entity_not_found,
+  Không đọc đáp án benchmark để tạo alias. Tên không khớp trả no_graph_match,
   không bỏ điều kiện entity rồi tìm toàn kho.
-- Qdrant lọc `entity_ids` trước vector top-K, loại bridge bằng point ID.
+- Qdrant lọc `entity_ids` và ID ảnh graph trước vector top-K.
   BM25 giữ IDF toàn corpus; tập ID hợp lệ lấy bằng cùng filter Qdrant trước cắt K.
 - Mỗi mục tiêu có candidates (mặc định top-100) và results (count yêu cầu hoặc giới hạn
   hiển thị 10 nếu count=null). Thiếu ảnh chỉ báo insufficient_candidates nếu có count
   tường minh; không bù bằng ảnh của target khác. Chưa kiểm chứng điều kiện thị giác.
-- Bridge tìm top-20 ảnh, giữ tối đa 3 entity giả thuyết, tối đa hai đường bằng chứng mỗi
-  entity theo cấu hình executor. Không coi top-1 là đúng. Ảnh nhiều entity hoặc nguồn ghi chưa chắc chắn bị
-  bỏ khỏi bước nhận diện. Đây là chính sách bảo thủ, có thể bỏ cả alias đúng cùng nơi.
-- Bước phụ thuộc tìm trong các entity giả thuyết của bước trước, loại ảnh bridge đã
-  dùng. Nhiều dependency lấy giao entity. Kết quả giữ bridge image ID/record ID và trace.
-  Đây là traversal ứng viên qua metadata image–entity, chưa là graph facts/VLM xác nhận.
-- Planner lỗi/cần làm rõ, entity mâu thuẫn hoặc không có bridge đều có trạng thái riêng.
-  Không tạo vector, entity hay ảnh giả để lấp kết quả.
+- Phạm vi ảnh lấy qua DEPICTS trong Neo4j và lọc cùng Qdrant trước top-K.
+- Dependency có điều kiện graph được thực thi trước khi tìm ảnh đích. Graph hỗ trợ
+  LOCATED_IN/PART_OF/BRANCH_OF; visual bridge và quan hệ ngoài schema trả
+  `unsupported_graph_relation`. Multi-target giữ các mục tiêu chạy được.
 - Query được mã hóa khi chạy; không lưu hoặc đọc cache vector trên đĩa.
   Query bị cắt token hoặc vector sai shape/norm bị từ chối.
 
@@ -305,42 +301,18 @@ Test: `pytest -q tests/unit/test_retrieval.py` (fixture nhỏ, không mạng/mod
 
 ## Executor — bước 5
 
-`retrieval/executor.py` thực thi dependency; `retrieval/evidence.py` kiểm tra bằng chứng
-metadata. Giữ API/CLI retrieval hiện tại, không gọi thêm OpenAI, VLM hay sửa planner.
-Quan hệ đang hỗ trợ là ảnh thuộc entity trong catalog, chưa là graph facts tổng quát.
+Graph quan hệ thật đã nhập từ extraction Codex điền trực tiếp, không gọi API.
+Dữ liệu ở `var/graph-manual-v1/`, gồm 1.886 Image, 319 Entity và 301 quan hệ nghiệp vụ.
+`prepare`/`build` hỗ trợ điền metadata và dựng lại graph mà không gọi model.
+Xem [lệnh và phạm vi rà soát](../../README.md#graph-quan-hệ-neo4j).
 
-- Mỗi entity giữ đường bằng chứng riêng: step ID, bridge image ID, target image ID,
-  record ID và URL nguồn nếu có. Chỉ ghép dependency có chung entity và không mâu thuẫn
-  ảnh ở ancestor chung. Loại ảnh bridge khỏi kết quả của chính đường đó.
-- Caption được đối chiếu theo cụm tường minh, giữ dấu tiếng Việt. Lưu đoạn caption/
-  record hỗ trợ từng điều kiện. Thiếu cụm hoặc phủ định chưa có bằng chứng => unverified.
-  Không suy thiếu từ là sai và không dùng label benchmark làm bằng chứng.
-- Liên kết nhiều entity hoặc nguồn không chắc chắn bị cách ly khi cần định danh entity.
-  Các ứng viên bị loại vẫn lưu lý do; không tự sửa catalog để khớp kết quả model.
-- `hypotheses` chứa entity, các đường bridge, candidates/results và count_status riêng.
-  Còn nhiều giả thuyết => ambiguous_entity, results cấp group rỗng; không trộn ảnh hoặc
-  cộng số ảnh của entity khác nhau để đáp ứng yêu cầu. candidates cấp group chỉ để xem xét.
-- `count_status` có thể là not_requested, insufficient_candidates, unverified,
-  supported_by_metadata hoặc unresolved_entity. Số lượng hỗ trợ bởi metadata không
-  đồng nghĩa các ảnh đã được xác minh thị giác. `visual_verification=not_performed`.
-- Trạng thái toàn kế hoạch phân biệt candidate_results, partial_results, unresolved
-  và needs_clarification. Thiếu entity/bridge không fallback tìm toàn kho.
-- Beam mặc định 3 entity, 2 đường/entity; tối đa 64 tổ hợp khi ghép nhiều dependency.
-  Đường bị giới hạn tổ hợp được gắn path_join_truncated; hết budget mà chưa ghép được
-  trả path_budget_exceeded, không giả làm kết luận không có đáp án.
+Planner v3 có GraphQuery: chọn loại/tên đích, AND/OR các đường quan hệ có hướng,
+anchor theo tên hoặc kết quả bước trước. Neo4j trả entity đích, ánh xạ về ID nguồn
+trong Qdrant; vector/BM25/RRF tìm ảnh trong cùng phạm vi. Tin liên kết metadata yes,
+ảnh dùng chung không bị loại chỉ vì có nhiều entity. Không gọi model trích xuất khi search.
+Các điều kiện thị giác còn được xếp hạng bằng retrieval, chưa có reranker.
 
-Cùng lệnh retrieval, thêm hai settings `IMAGE_SEARCH_RETRIEVAL_PATHS_PER_ENTITY` và
-`IMAGE_SEARCH_RETRIEVAL_PATH_COMBINATION_LIMIT` nếu cần thay giới hạn.
-
-```bash
-HF_HUB_OFFLINE=1 OPENBLAS_NUM_THREADS=1 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/executor-v1/new-live
-```
-
-Đã kiểm tra lại cùng 6 kế hoạch thật ở bước 4, giữ nguyên input/vector/prompt, không gọi
-lại API. Artifact mới ở `var/executor-v1/`: `cached/`, `live/`, `index.html`, `report.md`
-và `verification.json`. HTML hiển thị từng giả thuyết và các đường bằng chứng.
-Phép đo tính cả kế hoạch unresolved/partial; không loại chúng để làm đẹp p90.
-Chưa đánh giá chất lượng retrieval toàn tập. Xác minh thị giác/rerank thuộc bước 6.
+Các kết quả executor-v1/source-graph-v1 cũ là lịch sử, không phải kết quả graph mới.
 
 
 ## Lưu vector vào Qdrant
@@ -378,7 +350,7 @@ uv run image-search-qdrant --sync-metadata
 Lệnh đọc nguồn đã pin một lần khi nhập, kiểm tra corpus/hash, cập nhật payload bằng
 `set_payload` (không encode hoặc ghi lại vector), kiểm tra đủ ảnh/snapshot rồi lưu
 fingerprint trong collection metadata. Có thể chạy lại cùng nguồn.
-Runtime chỉ đọc Qdrant để tra entity, lọc và kiểm tra bằng chứng; không đọc
+Runtime tra entity/quan hệ qua Neo4j, lọc metadata và tìm ảnh qua Qdrant; không đọc
 CSV, JSONL nguồn, benchmark manifest hoặc keyword index local. File nguồn vẫn giữ
 cho nhập dữ liệu/đánh giá; ảnh/model vẫn ở local. Alias truyền tường minh qua CLI
 là cấu hình bổ sung, không phải fallback về file metadata.

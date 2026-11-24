@@ -1,4 +1,4 @@
-"""Tìm ứng viên trong đúng phạm vi trước top-K; bridge chỉ là giả thuyết có nguồn."""
+"""Tìm trong phạm vi graph nguồn và Qdrant trước top-K, gộp RRF chuẩn 1:1."""
 
 import numpy as np
 
@@ -7,7 +7,8 @@ from image_search.retrieval.executor import PlanExecutor
 
 
 class RetrievalEngine:
-    def __init__(self, image_ids, vector_store, keyword_index, catalog, settings):
+    def __init__(self, image_ids, vector_store, keyword_index, catalog, settings, graph_store=None):
+        self.graph_store = graph_store
         if len(image_ids) != len(set(image_ids)):
             raise ValueError("Image index bị trùng")
         self.image_ids = image_ids
@@ -19,6 +20,9 @@ class RetrievalEngine:
     def search(self, text, vector, method, limit, allowed=None, excluded=None, entity_ids=None):
         if method not in ("vector", "keyword", "hybrid"):
             raise ValueError("Phương pháp không hợp lệ")
+        if self.graph_store is not None and entity_ids is not None:
+            graph_ids = self.graph_store.images_for(entity_ids)
+            allowed = graph_ids if allowed is None else set(allowed) & graph_ids
         if allowed is not None and not allowed or entity_ids is not None and not entity_ids:
             return []
         dense, sparse = [], []
