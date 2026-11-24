@@ -27,11 +27,22 @@ def expected(kind="single"):
     )
 
 
+def draft(**values):
+    target = {
+        "image_subject": "mặt tiền",
+        "image_text": "mặt tiền cửa hàng A",
+        "entities": [],
+        "conditions": [],
+        "count": None,
+    }
+    return {"targets": [target | values], "clarification_question": None}
+
+
 def response_payload(plan=None, status="completed", refusal=False):
     content = (
         [{"type": "refusal", "refusal": "refused"}]
         if refusal
-        else [{"type": "output_text", "text": json.dumps(plan or expected()), "annotations": []}]
+        else [{"type": "output_text", "text": json.dumps(plan or draft()), "annotations": []}]
     )
     return {
         "id": "resp_test",

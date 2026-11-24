@@ -3,10 +3,74 @@
 Planner dùng OpenAI để route câu hỏi và tạo kế hoạch. CLI chỉ lập kế hoạch;
 executor và playground local dùng kế hoạch để chạy retrieval/graph trong phạm vi đã hỗ trợ.
 
-## Prompt đang dùng: làm rõ phạm vi multi-hop
+## Prompt đang dùng: phân tích phạm vi, code suy ra route
 
-`src/image_search/planner/router.py`: prompt `planner-graph-multihop-scope`.
-Đã sửa theo yêu cầu người dùng để mô tả rõ ảnh đích, entity chưa biết tên và điều kiện
+`planner-draft-scope-v6`. Model không còn trả `query_type`, bước hoặc dependency. Model điền
+`QueryDraft` (`src/image_search/planner/draft.py`): nội dung ảnh đích, nơi chứa, và `owner`
+của từng điều kiện (ảnh hay nơi chứa). `compile_plan` suy ra `Step`, dependency, `query_type`;
+`QueryPlan` và executor giữ nguyên. Kết quả lưu thêm `draft`, và `raw_output` khi plan sai.
+
+Luật code chính (`tests/unit/test_planner_draft.py`):
+
+- Nơi chứa chưa có tên và có điều kiện riêng: resolve_entity rồi retrieve_images (multi-hop).
+- Nơi chứa có tên riêng: single; mô tả kèm theo là điều kiện mềm.
+- Một quan hệ trực tiếp với anchor có tên: bộ lọc graph trong bước trả ảnh (single).
+  Từ hai quan hệ hoặc đường đi dài hơn: resolve_entity.
+- Ảnh đích chính là nơi đó: mọi mô tả là điều kiện ảnh. "Bên trong X" là cảnh khác của X.
+- Cụm đứng trước nơi chứa trong câu không thể bổ nghĩa cho nơi đó.
+- Bước trả ảnh của multi-hop được dựng không chứa đặc điểm nhận diện.
+
+`IMAGE_SEARCH_PLANNER_REASONING_EFFORT` mặc định `low`: với mức mặc định của model, 3/36 câu
+ở lượt dev đầu hết 4.096 token và độ trễ cao hơn.
+
+### Kết quả 25/11/2026
+
+Một lượt/câu, GPT-5 mini. Prompt cũ là `planner-graph-multihop-scope`; `data20` là 20 câu dev
+multi-hop, bỏ q0300/q0320 (bridge và đích cùng một đối tượng; nhãn giữ nguyên, chờ duyệt).
+"Đúng vai" yêu cầu đặc điểm nhận diện chỉ ở resolve và nội dung đích chỉ ở retrieve.
+
+| Phép đo | Prompt cũ | v6 |
+|---|---:|---:|
+| data20 route, bỏ 2 câu nhãn nghi vấn | 11/18 | 15/18 |
+| data20 đúng vai | 11/18 | 15/18 |
+| data20 cả 20 câu | 11/20 | 16/20 |
+| Cặp scope: bỏ sót multi-hop | 0/16 | 0/16 |
+| Cặp scope: nhận nhầm single thành multi-hop | 2/16 | 2/16 |
+| Single/multi-target v2 (50 dev + 30 test) | chưa đo | 80/80 |
+| Fixture test | chưa đo | 29/30 |
+| p50 / p90 planner trên data20 (giây) | 26,1 / 32,7* | 15,2 / 18,4 |
+
+*Độ trễ cũ là toàn pipeline, 2 worker; chủ yếu là planner. Chưa đạt SLO 300 ms.
+v5 (trước luật tên riêng) chạy 2 lượt data20: 31/36 route, 30/36 đúng vai; kết quả dao động
+giữa các lượt. Lỗi còn lại ổn định: q0310 ("có ảnh trên cao…"), scope-09/14 (nhận nhầm).
+
+Replay hybrid không gọi API, plan v2 trong `pipeline-v1` so với plan mới (Recall@10):
+
+| Nhóm | Plan v2 | v6 |
+|---|---:|---:|
+| Holdout test: single (18) | 0,731 | 0,792 |
+| Holdout test: multi-target (12) | 0,507 | 0,507 |
+| Dev: single (29) | 0,679 | 0,658 |
+| Dev: multi-target (18) | 0,341 | 0,340 |
+| data20 multi-hop (19), so với prompt cũ | 0,263 | 0,000 |
+
+Multi-hop về 0 là hệ quả dự kiến: 5 câu trúng trước đây đều bị route nhầm sang single, còn
+executor chưa hỗ trợ visual bridge. Bản v5 từng làm giảm single/multi-target vì cắt tên riêng
+dài; v6 sửa lỗi này, còn q0102 bị tách "Phòng vắt sữa" khỏi tên.
+
+Giới hạn: bộ cặp scope do cùng một tác giả viết, dễ hơn dataset và split test đã được xem khi
+đo prompt cũ; text 54 câu multi-hop v2 cũng đã được xem. Fixture test cũ từng trùng ví dụ prompt
+(q049), nay ví dụ đã thay. Holdout 30 câu không dùng để tune nhưng từng có trong lượt 400 câu.
+Tổng chi phí thử nghiệm ước tính $1.21. Artifact: `var/planner-scope-v1/` (`v6-*` là bản
+cuối, `old-scope` là mốc, `replay-*6` là replay).
+
+```bash
+uv run python scripts/evaluate_planner_routes.py tests/fixtures/planner-scope-cases.jsonl --split dev --rounds 3 --output-dir var/planner-scope-new
+```
+
+## Lịch sử: prompt planner-graph-multihop-scope
+
+Prompt này đã được thay bằng bản trên. Đã sửa theo yêu cầu người dùng để mô tả rõ ảnh đích, entity chưa biết tên và điều kiện
 nhận diện qua cảnh khác. Schema, model GPT-5 mini và executor giữ nguyên.
 
 - Điều kiện trực tiếp mô tả ảnh cần trả: single, kể cả chưa có tên entity.
@@ -122,7 +186,7 @@ Không báo accuracy giả bằng cách chạy nhãn expected qua chính scorer.
 
 ## Code và kiểm tra
 
-`src/image_search/planner/`: schemas, settings, router, cli, evaluate. Không có vòng
+`src/image_search/planner/`: draft, schemas, settings, router, cli, evaluate. Không có vòng
 lặp agent hoặc framework orchestration. Settings độc lập với baseline.
 
 ```bash

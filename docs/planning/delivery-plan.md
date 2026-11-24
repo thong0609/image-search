@@ -6,7 +6,7 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | Bước | Công việc chính | Trạng thái |
 |---|---|---|
 | 1 | Chuẩn bị dataset, bộ câu hỏi và baseline đối chứng | Đã có v1/v2; nhãn còn giới hạn |
-| 2 | Planner: phân loại câu, tách mục tiêu và dependency | Đã thử OpenAI prompt v2; tạm giữ nguyên |
+| 2 | Planner: phân loại câu, tách mục tiêu và dependency | Prompt draft-scope-v6: code suy ra route; multi-hop dev 15/18, chưa đạt SLO |
 | 3 | Embedding: chọn/thử model ảnh–văn bản, mã hóa ảnh và lập index | Đã kiểm tra/tái sử dụng index SigLIP2; tạo vector theo từng bước planner và đo độ trễ |
 | 4 | Retrieval: mã hóa query của từng bước, tìm vector/keyword và kết hợp hybrid | Đã có vector/BM25/RRF theo mục tiêu, đã chạy thử query dev thật |
 | 5 | Thực thi kế hoạch: graph quan hệ entity cho multi-hop, retrieval theo từng mục tiêu | Graph 319 entity/301 quan hệ đã nhập từ extraction Codex trực tiếp; planner v3 chưa benchmark mới |

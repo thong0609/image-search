@@ -42,6 +42,10 @@ steps/dependency, ảnh và độ trễ trước bước hoàn thiện website. 
 hiện có, OpenAI key chỉ ở backend; giữ graph, prompt hiện hành và RRF 1:1. Không tự áp dụng
 prompt ứng viên hoặc thay planner; FE production/auth vẫn để sau.
 
+Người dùng duyệt đổi schema planner (25/11/2026): model chỉ phân tích owner của điều kiện,
+code suy ra dependency và route; cho gọi API để đo. Executor/graph/RRF giữ nguyên; nhãn
+q0300/q0320 chưa chốt. Chi tiết ở [planner](../design/planner.md).
+
 ## 2. ADR và trạng thái
 
 ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; Neo4j đã chọn cho graph nền C20; quan hệ nghiệp vụ, checkpoint VLM và cấu hình còn lại chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).
