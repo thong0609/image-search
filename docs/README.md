@@ -1,22 +1,15 @@
 # Tài liệu dự án
 
-Bộ tài liệu này mô tả dự án tìm ảnh địa danh bằng tiếng Việt. Đã có scaffold phase 0 và migration; nghiệp vụ tìm kiếm, dataset, crawler và benchmark chưa được triển khai. Cách cài/chạy/kiểm tra hiện hành ở [README dự án](../README.md).
+Baseline v2 đã hoàn thành code và đánh giá sơ bộ. Bắt đầu với hướng dẫn chạy
+hoặc kết quả bên dưới. Các tài liệu thiết kế/planning mô tả phần sản phẩm tiếp theo;
+trạng thái hiện tại và các bước đề xuất được ghi trong lộ trình.
 
-## Đọc theo nhu cầu
-
-| Tài liệu | Nội dung |
+| Nhóm | Tài liệu |
 |---|---|
-| [Kế hoạch MVP địa danh](landmark-mvp-plan.md) | Phạm vi, crawler, metadata, query modes, frontend và giả định local |
-| [PRD](prd.md) | Yêu cầu sản phẩm và tiêu chí chấp nhận |
-| [Lộ trình triển khai](delivery-plan.md) | Các giai đoạn BE/FE, đầu ra và điều kiện hoàn tất |
-| [Quyết định](decisions.md) | Lựa chọn đã chốt, đề xuất và việc còn mở |
-| [Thiết kế hệ thống](system-design.md) | Thành phần và luồng tìm kiếm/nhập ảnh |
-| [Hợp đồng API](api-contract.md) | Request, response, phân trang, lỗi và quyền |
-| [Mô hình dữ liệu](data-model.md) | Schema SQL 9 bảng |
-| [Qdrant](qdrant-design.md) | Vector/payload và đồng bộ catalog |
-| [Pipeline nhập ảnh](ingestion-design.md) | Import, crawl artifact, retry, cập nhật và xóa |
-| [Graph và VLM](graph-reranking-design.md) | Entity/relations, fusion, rerank và consistency |
-| [Auth](auth-design.md) | Access/refresh, login/logout, roles và media |
-| [Vận hành](operations.md) | Local/deploy, quan sát, backup, maintenance và khôi phục |
+| Baseline hiện tại | [Chạy CLI](baseline/baseline-usage.md), [bộ benchmark](baseline/benchmark-design.md), [kết quả v2](baseline/baseline-v2-results.md) |
+| Planner | [OpenAI planner v1: chạy và đánh giá](design/planner.md) |
+| Thiết kế hệ thống | [Tổng quan](design/system-design.md), [API và auth](design/api-contract.md), [SQL và Qdrant](design/data-model.md) |
+| Pipeline | [Nhập dữ liệu](design/ingestion-design.md), [graph và rerank](design/graph-reranking-design.md), [vận hành](design/operations.md) |
+| Kế hoạch sản phẩm | [PRD](planning/prd.md), [lộ trình](planning/delivery-plan.md), [quyết định](planning/decisions.md) |
 
-PRD là nguồn chuẩn cho phạm vi; API contract là nguồn chuẩn cho giao tiếp; data model là nguồn chuẩn cho 9 bảng. Cập nhật cả quyết định và tài liệu liên quan khi phạm vi thay đổi. Lệnh chạy/build/test backend đã có trong README dự án; frontend scaffold cũng có lệnh dev/lint/typecheck/build trong README.
+Cài đặt backend/frontend và lệnh kiểm tra: [README dự án](../README.md).

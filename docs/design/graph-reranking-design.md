@@ -83,7 +83,7 @@ Graph có hai vai trò được ghi trong query plan:
 - **Bổ sung ứng viên/tín hiệu:** traversal trả danh sách image_id/content_version, rank và bằng chứng đường đi; hợp nhất với vector/keyword bằng weighted RRF làm baseline. Graph rank thử theo số quan hệ đã xác minh khớp và độ dài đường đi tăng dần, tie-break image_id; không coi rank này là xác suất.
 - **Điều kiện bắt buộc:** kiểm tra membership của từng candidate theo đầy đủ đường quan hệ. Tập ID lấy giới hạn từ graph để fusion không phải toàn bộ tập hợp lệ. Nếu prefilter bằng ID, chỉ dùng tập đầy đủ đã xác minh đủ nhỏ; với tập lớn dùng membership check theo batch và overfetch hữu hạn. Có thể trả ít kết quả khi hết budget, không bỏ constraint hoặc coi ID ngoài graph top-K là chắc chắn không hợp lệ.
 
-Giới hạn ban đầu để thử: tối đa 2 hops facts (profile địa danh đếm riêng bước lấy ảnh như mục 8), 1.000 entity được thăm, 200 graph candidates; pin traversal direction, allowed predicates, fan-out, timeout và ranking rule trong graph_config. Có cycle detection. Vượt giới hạn khi đánh giá hard membership mà chưa xác định được đúng/sai là lỗi có kiểm soát, không coi là false hoặc complete; xử lý theo mục 6. Báo candidate truncation trong telemetry. Các giá trị này cần thay bằng benchmark Q13/Q15.
+Giới hạn ban đầu để thử: tối đa 2 hops facts, 1.000 entity được thăm, 200 graph candidates; pin traversal direction, allowed predicates, fan-out, timeout và ranking rule trong graph_config. Có cycle detection. Vượt giới hạn khi đánh giá hard membership mà chưa xác định được đúng/sai là lỗi có kiểm soát, không coi là false hoặc complete; xử lý theo mục 6. Báo candidate truncation trong telemetry. Các giá trị này cần thay bằng benchmark Q13/Q15.
 
 Mỗi nhánh thử lấy tối đa 200 ứng viên; fusion và kiểm chứng giữ tối đa 200. Graph candidates phải hydrate metadata từ đúng published Qdrant point, sau đó áp dụng orientation/size/collection filters giống các nhánh khác. Loại ảnh deleted, version cũ hoặc graph projection không khớp pointer. Chỉ dùng bằng chứng quan hệ của revision đã công bố.
 
@@ -112,7 +112,7 @@ Qdrant và graph là hai projection dẫn xuất. DB quan hệ vẫn là nguồn
 
 Delete commit tombstone ngay; purge mọi Qdrant point và graph image node/cạnh gắn ảnh ở mọi generation, kể cả staging. Không xóa shared entity còn được ảnh khác tham chiếu; giữ provenance nguồn shared relations. Không báo purge complete khi writer cũ còn có thể ghi trễ. Reconcile phát hiện graph orphan, thiếu projection, hash/version lệch, dangling edge và graph pointer chưa publish. Final checks vẫn bắt buộc dù graph payload có cờ active.
 
-search_configs gắn encoder/vector generation, graph generation/schema/linker revision, fusion và VLM thành một row cấu hình đọc. Đổi encoder hoặc graph schema dùng generation mới qua maintenance: chặn/drain ghi, backfill trên dữ liệu đứng yên, kiểm chứng và cutover active config nguyên tử; chưa hỗ trợ dual-write/catch-up online. Đổi riêng VLM/prompt có thể tái sử dụng indices tương thích, nhưng activation phải lấy graph manifest/revision hiện hành và vô hiệu hóa snapshots cũ. Rollback trực tiếp chỉ khi index cũ còn khớp catalog/facts, nếu không phải rebuild trong maintenance. Không có distributed transaction giữa các store. Schema 9 bảng ở [data-model.md](data-model.md).
+search_configs gắn encoder/vector generation, graph generation/schema/linker revision, fusion và VLM thành một row cấu hình đọc. Đổi encoder hoặc graph schema dùng generation mới qua maintenance: chặn/drain ghi, backfill trên dữ liệu đứng yên, kiểm chứng và cutover active config nguyên tử; chưa hỗ trợ dual-write/catch-up online. Đổi riêng VLM/prompt có thể tái sử dụng indices tương thích, nhưng activation phải lấy graph manifest/revision hiện hành và vô hiệu hóa snapshots cũ. Rollback trực tiếp chỉ khi index cũ còn khớp catalog/facts, nếu không phải rebuild trong maintenance. Không có distributed transaction giữa các store. Schema 9 bảng ở [mô hình dữ liệu](data-model.md).
 
 ## 6. Lỗi và suy giảm
 
@@ -129,7 +129,7 @@ Mặc định cấu hình đầy đủ là strict: dependency unavailable trả 
 | Graph và VLM cùng fallback | degradation_reason=MULTIPLE_COMPONENT_FAILURES; chi tiết từng lỗi lưu server-side theo request_id |
 | Catalog hoặc Qdrant không đọc được | Fail; không có đường fallback giữ bảo đảm lifecycle/metadata |
 
-Không fallback khi không thể kiểm chứng hard constraint hoặc image lifecycle. Không dùng lỗi dependency làm kết quả rỗng. Nhánh keyword và vector cũng có required/optional policy tường minh theo [API contract](api-contract.md) và benchmark trong [lộ trình triển khai](delivery-plan.md).
+Không fallback khi không thể kiểm chứng hard constraint hoặc image lifecycle. Không dùng lỗi dependency làm kết quả rỗng. Nhánh keyword và vector cũng có required/optional policy tường minh theo [API contract](api-contract.md) và benchmark trong [lộ trình triển khai](../planning/delivery-plan.md).
 
 ## 7. Đánh giá và điều kiện triển khai
 
@@ -138,11 +138,3 @@ So sánh trên cùng dataset/filters/query labels: keyword-only, vector-only, ve
 Đo riêng entity linking/traversal, fusion/hydration, ảnh inference fetch, VLM, final checks và tổng API p50/p95/p99 ở tải mục tiêu; đo VRAM, bytes ảnh, inference cost/query, fallback/retry rate và import graph lag. Mục tiêu đề xuất p95 warm < 2 giây vẫn là mục tiêu toàn pipeline, chưa có bằng chứng đáp ứng; shortlist=50 và deadline thử dưới 5 giây cần benchmark rồi điều chỉnh/chốt Q15. Không loại thời gian VLM khỏi báo cáo để tuyên bố đạt SLO.
 
 Integration tests khi triển khai: entity trùng tên/alias, cycle/fan-out budget, hard membership ngoài graph top-K, graph rỗng vs lỗi, lỗi partial write và crash trước publish, shared relation update, stale graph writer sau delete, graph đổi trong lúc VLM chạy/phân trang, output VLM thiếu/trùng/ngoài tập, timeout strict/fallback và snapshot không rerank lần hai. Mock inference cho tests thường xuyên; benchmark model thật tách riêng.
-
-## 8. Profile địa danh local và nhiều targets
-
-C14–C18: dùng Place/AdministrativeArea/PlaceType với image depicts place, located_in, part_of và instance_of có evidence/revision; [MVP địa danh](landmark-mvp-plan.md) định nghĩa metadata/nguồn và query modes. Với profile này hop budget facts ban đầu là 2; cạnh image depicts dùng lấy ảnh và không tính vào 2 bước suy luận, tổng path có thể 3 cạnh. Ghi rõ cách đếm vào graph_config để fixtures/benchmark nhất quán.
-
-“Hạ Long, Cát Bà” tạo hai target plans và nhóm kết quả riêng. Mỗi target retrieval/fusion/rerank riêng nhưng chia chung node/candidate/deadline/API usage budget request. Giữ group membership trong query_plan/items JSON. Graph facts không tự tạo từ VLM captions; tên hành chính/aliases được kiểm chứng theo source revision, không hard-code địa giới.
-
-Phần cứng local là Intel Raptor Lake-P dùng RAM hệ thống chia sẻ 16 GB, không CUDA/VRAM dedicated đã xác nhận. Đề xuất encoder CPU và VLM API ngoài; shortlist 5–10 cho target trả 1 ảnh, tổng tối đa 50 ảnh/request và một API call in flight trước benchmark. Window 50 ở mục 4 vẫn là ví dụ cấu hình tổng quát, không phải yêu cầu rerank 50 ảnh mỗi target trên laptop. Graph adapter immutable JSON cho sample là đề xuất, engine production chưa chốt.

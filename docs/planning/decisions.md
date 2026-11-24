@@ -1,6 +1,6 @@
 # Quyết định, giả định và câu hỏi còn mở
 
-Trạng thái ngày 06/11/2026. “Đã xác nhận” chỉ dùng cho thông tin người dùng đã cung cấp; ADR chưa chốt là thiết kế để review. ADR03 có quyết định mới của người dùng thay phương án ban đầu.
+Cập nhật sau baseline v2: dùng dataset CSV hiện có, đã chốt baseline và đánh giá ba loại câu hỏi. Kế hoạch riêng cho địa danh đã bị bỏ; các quyết định cũ liên quan được đánh dấu thay thế bên dưới. “Đã xác nhận” chỉ dùng cho thông tin người dùng đã cung cấp; ADR chưa chốt là thiết kế để review. ADR03 có quyết định mới của người dùng thay phương án ban đầu.
 
 ## 1. Quyết định sản phẩm đã xác nhận
 
@@ -10,7 +10,7 @@ Trạng thái ngày 06/11/2026. “Đã xác nhận” chỉ dùng cho thông ti
 | C02 | MVP dùng kho ảnh riêng | Làm rõ của người dùng |
 | C03 | Kho mục tiêu 100.000–1.000.000 ảnh | Làm rõ của người dùng |
 | C04 | Tìm bằng ảnh là mở rộng sau MVP | Yêu cầu người dùng |
-| C05 | Cũ: nguồn ngoài sau MVP; C15 cập nhật thu thập web để nhập kho vào phạm vi hiện tại. Gọi provider trực tiếp khi search vẫn để sau | Người dùng; superseded một phần bởi C15 |
+| C05 | Nguồn ngoài là hạng mục cần đánh giá riêng khi mở rộng dataset. Gọi provider trực tiếp khi search vẫn để sau | Cập nhật sau khi bỏ kế hoạch landmark |
 | C06 | Dùng Qdrant lưu vector và metadata tìm kiếm, tách khỏi DB quan hệ; không dùng pgvector | Yêu cầu người dùng ngày 05/11/2026 |
 | C07 | Chưa cần feedback trong MVP | Yêu cầu người dùng ngày 05/11/2026 |
 | C08 | Có login/logout, phân quyền chức năng; không ACL theo ảnh/collection | Yêu cầu người dùng ngày 05/11/2026 |
@@ -19,8 +19,8 @@ Trạng thái ngày 06/11/2026. “Đã xác nhận” chỉ dùng cho thông ti
 | C11 | Login dùng access token + refresh token, không dùng session đăng nhập | Yêu cầu người dùng ngày 05/11/2026 |
 | C12 | Bổ sung graph search bên cạnh vector/keyword search và VLM để rerank ứng viên trong phạm vi triển khai hiện tại | Yêu cầu người dùng ngày 06/11/2026 |
 | C13 | Rút schema từ 24 xuống 9 bảng SQL theo phương án đã đề xuất; giữ collections và audit_events; reindex có maintenance window, chưa hỗ trợ dual-write/catch-up hoặc rollback online tự động | Người dùng chấp thuận phương án ngày 06/11/2026 |
-| C14 | Tạm chọn địa danh để người dùng hình dung nơi đó; bắt đầu tìm bằng tiếng Việt | Người dùng ngày 06/11/2026 |
-| C15 | Chưa có dataset; bổ sung thu thập web vào kho trước search; nguồn cụ thể chưa chốt | Người dùng ngày 06/11/2026; cập nhật phạm vi C05 |
+| C14 | Đã bỏ: giới hạn MVP vào địa danh. Sản phẩm là tìm ảnh trên dataset hiện có | Người dùng xác nhận bỏ hướng landmark |
+| C15 | Đã thay thế giả định chưa có dataset: hiện dùng CSV đã duyệt và kho ảnh baseline. Kế hoạch Commons/Wikidata cũ đã bỏ | Trạng thái baseline v2 |
 | C16 | Một người phát triển, backend FastAPI và PostgreSQL | Người dùng ngày 06/11/2026 |
 | C17 | Triển khai local trước; RAM hệ thống 16 GB, Intel Raptor Lake-P dùng RAM chia sẻ, không VRAM chuyên dụng cố định; cho phép API VLM ngoài | Người dùng và làm rõ phần cứng ngày 06/11/2026 |
 | C18 | Query một mục tiêu, nhiều mục tiêu như “ảnh Hạ Long, ảnh Cát Bà”, và multi-hop có suy luận quan hệ | Người dùng và làm rõ multi-target ngày 06/11/2026 |
@@ -28,7 +28,7 @@ Trạng thái ngày 06/11/2026. “Đã xác nhận” chỉ dùng cho thông ti
 
 ## 2. ADR và trạng thái
 
-ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; engine, checkpoint và cấu hình cụ thể chưa chốt. Chi tiết ở [thiết kế Qdrant](qdrant-design.md).
+ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; engine, checkpoint và cấu hình cụ thể chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).
 
 | ID | Lựa chọn | Phương án thay thế | Lý do và đánh đổi | Điều kiện xem lại |
 | --- | --- | --- | --- | --- |
@@ -54,7 +54,7 @@ Lịch sử ADR03: 04/11/2026 đề xuất PostgreSQL + pgvector để giảm th
 
 ## 3. Giả định đang dùng
 
-- Địa danh và tiếng Việt đã chốt C14; seed địa danh/phạm vi địa lý đầu tiên vẫn là đề xuất, chưa có dataset.
+- Truy vấn tiếng Việt, dùng dataset CSV hiện có. Không áp dụng seed/profile địa danh cũ.
 - Schema 9 bảng đã chốt C13; giữ collection và audit. Nguồn là config versioned, maintenance window thay cho dual-write/catch-up online.
 - Một người phát triển và local đã chốt C16/C17; đề xuất ít dịch vụ, encoder CPU và VLM API trước. RAM 16 GB không được coi là VRAM dedicated/CUDA.
 - Ảnh được phép xử lý và lưu; cần kiểm kê nguồn/quyền cụ thể.
@@ -65,13 +65,13 @@ Lịch sử ADR03: 04/11/2026 đề xuất PostgreSQL + pgvector để giảm th
 
 | ID | Câu hỏi | Tác động | Cần có trước |
 | --- | --- | --- | --- |
-| Q01 | Đã chọn tạm địa danh để xem nơi đó thế nào; cần seed địa danh và 10–20 query/nhãn thật, gồm single/multi-target/multi-hop | Dataset/query plan/semantic quality | Trước benchmark |
-| Q02 | Tiếng Việt đã chốt; chưa có metadata/dataset. title/description/tags và provenance theo đề xuất MVP địa danh | Metadata coverage, tokenizer và source mapping | Trước crawl sample |
+| Q01 | Mở rộng query thật và duyệt độc lập nhãn v2 khi cần | Chất lượng benchmark | Trước nghiệm thu chất lượng chính thức |
+| Q02 | Đối soát metadata/entity và xử lý mâu thuẫn trong CSV hiện có | Nhãn và source mapping | Trước mở rộng dữ liệu |
 | Q03 | QPS thường/đỉnh, người đồng thời và cửa sổ nhập ảnh? | Sizing, SLO, concurrency | Benchmark nghiệm thu |
 | Q04 | Local Intel Raptor Lake-P, RAM chia sẻ 16 GB đã rõ; API VLM được phép. Chưa chốt budget/endpoint hoặc cloud sau này | CPU benchmark, API usage/cost, hosting | Trước chạy model có phí/deploy |
 | Q05 | Có cần kiểm tra login ở mỗi lần đọc ảnh gốc/thu hồi URL tức thì, hay chấp nhận signed URL ngắn hạn có thể chia sẻ? | Signed URL/proxy cho preview/download; không đổi phạm vi tìm kiếm | Chốt cách phục vụ ảnh gốc |
 | Q06 | Availability, RPO/RTO và downtime chấp nhận? | Replica, backup, restore | Pilot có dữ liệu thật |
-| Q07 | Chưa có dataset; cần chốt nguồn/seed crawl, mapping license/attribution, quotas và cập nhật/xóa | Web acquisition/source adapter và import | Crawl sample và trước import diện rộng |
+| Q07 | Có cần mở rộng nguồn ngoài dataset hiện tại không? | Phạm vi ingestion/crawl bổ sung | Khi có nhu cầu mở rộng nguồn |
 | Q08 | Mức chất lượng đủ dùng theo nhóm query và ai gán nhãn? | Semantic acceptance gate | Nghiệm thu MVP |
 | Q09 | Retention query, refresh registry, audit, backup và thời hạn purge? | Dữ liệu nhạy cảm, chi phí, xóa | Bật thu thập/lưu dữ liệu tương ứng |
 | Q10 | Một người, FastAPI/PostgreSQL đã chốt; frontend theo C19, deadline còn mở | Toolchain/UI và lịch | Trước cam kết lịch |
@@ -105,4 +105,4 @@ Các câu hỏi còn mở trên là đầu vào thiết kế tiếp theo; không
 
 Lịch sử C13/ADR15: thiết kế tách source/family/generation/projection/import/item/delivery/search-item thành bảng riêng được superseded bởi schema 9 bảng. Không có migration thực tế. Family và projection vẫn là khái niệm nghiệp vụ, được lưu qua root row/index_state; jobs tạo cùng transaction catalog giữ transactional outbox. ADR10 đổi từ reindex có catch-up sang maintenance runbook; auth vẫn giữ rotation/reuse detection và access revocation sau commit.
 
-C14–C18 cập nhật phạm vi ngày 06/11/2026: chưa có data, crawl nguồn có kiểm soát trở thành acquisition offline hiện tại; nguồn Wikimedia/Wikidata, graph JSON adapter và API VLM Flash/Flash-Lite là đề xuất ở [MVP địa danh](landmark-mvp-plan.md), không tự coi đã chốt engine/provider/budget. C18 nhiều mục tiêu khác số lượng ảnh: “Hạ Long, Cát Bà” phải có hai nhóm, không một danh sách top-2 tùy ý. Chưa có crawl/model run thực tế hoặc chi phí phát sinh do cập nhật tài liệu này.
+Baseline v2 đã hoàn thành code và đánh giá sơ bộ. Không áp dụng kế hoạch địa danh/Commons/Wikidata cũ; dữ liệu hiện tại và giới hạn nhãn được ghi trong [tài liệu benchmark](../baseline/benchmark-design.md).

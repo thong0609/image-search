@@ -2,7 +2,7 @@
 
 Trạng thái: đề xuất cho kho riêng 100k–1M ảnh. Liên quan FR05, FR06, FR08 và NFR05.
 
-Cập nhật 05/11/2026: Qdrant lưu vector và payload metadata; DB quan hệ giữ jobs, outbox và pointer công bố. Quy trình cross-store theo [thiết kế Qdrant](qdrant-design.md).
+Cập nhật 05/11/2026: Qdrant lưu vector và payload metadata; DB quan hệ giữ jobs, outbox và pointer công bố. Quy trình cross-store theo [thiết kế Qdrant](data-model.md#qdrant).
 
 Cập nhật 06/11/2026: nhập liệu dựng cả Qdrant và graph projection; VLM rerank chạy online sau retrieval, không bắt buộc VLM caption/extraction toàn kho. Quy tắc graph artifacts, shared relations và publish ở [graph và reranking](graph-reranking-design.md).
 
@@ -85,11 +85,3 @@ Replay import không tạo duplicate; hai worker claim không công bố cùng j
 Bổ sung tests graph: replay cùng artifact/hash không tạo cạnh trùng; Qdrant thành công nhưng graph lỗi không publish version; graph rỗng hợp lệ được publish; crash giữa hai target phục hồi được; cập nhật metadata tái dựng quan hệ dù dùng lại vector; shared relation đổi tăng graph_revision; delete rồi stale graph write không hồi sinh ảnh; purge không xóa thực thể dùng chung còn được tham chiếu.
 
 C13 parser/retry: source definitions là cấu hình versioned, pin ref/hash trong jobs và image_versions. Root import job giữ idempotency/request hash và parser checkpoint; import_item dedupe theo root/line để replay không tạo item trùng, lỗi dòng vẫn có item job dù chưa tạo image. Parent/dependencies có schema, không cycle; child failed vĩnh viễn phải cập nhật item/root progress. Retry item reset/enqueue đúng bước lỗi trong transaction và không reset target đã ready. Maintenance chặn root ghi mới, chỉ cho phép jobs thuộc tập drain đã ghi bền tiếp tục hoàn tất, rồi drain writers trước rebuild; request ghi bị chặn trả 503 MAINTENANCE_MODE và Retry-After. Khi xóa catalog, tạo purge job cùng transaction tombstone.
-
-## 8. Nhập nguồn web địa danh
-
-C15 bổ sung acquisition có kiểm soát trước import: admin chọn source/seed đã đăng ký → jobs crawl/crawl_item/fetch_media → lưu metadata/facts/source revisions/attribution → validate quyền/nguồn và image–place link → download giới hạn, hash/dedup → manifest bất biến → import pipeline như trên. Crawl root.result ghi import_id để truy tiến độ publish; downloaded không đồng nghĩa searchable. Giữ 9 bảng SQL. Single developer dùng một nguồn trước; Wikimedia Commons/Wikidata là đề xuất ở [MVP địa danh](landmark-mvp-plan.md).
-
-Nguồn private không đổi contract manifest/object allowlist; source config web_import bổ sung API/media host/redirect/DNS allowlist, User-Agent/contact, rate/backoff và quota. Không nhận tùy ý URL từ user; fetch không được truy cập private/link-local/local services. Metadata nguồn HTML được sanitize; không coi HTML/prompt trong metadata là lệnh cho worker/VLM. Lưu snapshot nguyên bản có giới hạn và normalized metadata theo version ngoài Git.
-
-Crawl/dịch/caption không được tự nhận diện địa danh hoặc suy license/quan hệ; liên kết entity phải có nguồn và verification state. title/description/tags có thể thiếu; giữ bản gốc/ngôn ngữ và provenance nếu chuẩn hóa tiếng Việt. Graph facts/aliases từ nguồn có revision và published manifest; crawl search query không cập nhật graph ngay trong request. Tests khi implementation gồm source timeout/429/redirect, thiếu attribution, image-place link sai, parser resume, duplicate file, deleted source replay, partial download và maintenance drain.

@@ -48,7 +48,7 @@ Metric labels không chứa query, image_id, principal_id hoặc request_id đ�
 
 Cảnh báo thử cho pilot: p95 vượt mục tiêu trong 10 phút với đủ request; lỗi 5xx > 1% trong 5 phút với tối thiểu 100 request; disk free < 20%; backlog vượt khả năng xử lý trong cửa sổ cập nhật đã chốt. Đây là ngưỡng khởi đầu để tune, chưa là SLA. Tách cảnh báo tính toàn vẹn/quyền khỏi cảnh báo hiệu năng.
 
-Auth metrics bổ sung: login success/failure/rate-limit, expired/revoked access token use, refresh rotations/reuse, admin authorization failures. Không log password/Authorization/refresh cookie. Logout/role/password changes phải được thử nghiệm thu hồi token; auth endpoints không cache. Role và media policy theo [auth-design.md](auth-design.md).
+Auth metrics bổ sung: login success/failure/rate-limit, expired/revoked access token use, refresh rotations/reuse, admin authorization failures. Không log password/Authorization/refresh cookie. Logout/role/password changes phải được thử nghiệm thu hồi token; auth endpoints không cache. Role và media policy theo [xác thực và phân quyền](api-contract.md#auth).
 
 JWT signing keys được quản lý tách khỏi source/config public; pin thuật toán/kid, có kế hoạch key rotation. Public verification keys cũ chỉ giữ theo TTL hợp lệ, không chấp nhận key bị compromise. Backup/restore không được làm sống lại root/token đã revoked hoặc consumed; đối soát revocation ledger trước phục vụ. Tham số và hành vi rotation/reuse theo auth-design; refresh lỗi sau commit phải có hướng login lại.
 
@@ -104,12 +104,6 @@ Tombstone có hiệu lực ngay cho response sau commit; signed URL đã cấp k
 
 ## 8. Capacity và chi phí
 
-Dự toán riêng vector/index, ảnh gốc, thumbnail, backup, graph và generations song song. Đo dung lượng ảnh p50/p95 và tải theo [kế hoạch MVP địa danh](landmark-mvp-plan.md); tính egress, inference và công vận hành sau khi có benchmark.
+Dự toán riêng vector/index, ảnh gốc, thumbnail, backup, graph và generations song song. Đo dung lượng ảnh p50/p95 và tải trên dataset hiện có; tính egress, inference và công vận hành sau khi có benchmark.
 
 Cập nhật C12: tính thêm graph nodes/edges/aliases/indexes/artifacts, backfill hai graph generations, VLM weights/KV/runtime memory, ảnh rendition, GPU concurrency, image egress và cost mỗi lượt rerank. Thay riêng VLM/prompt cần profile/quality gate và rollback cấu hình, không bắt buộc rebuild vector. Rebuild dùng maintenance window, không background catch-up. Tổng deadline thử dưới 5 giây và p95 warm < 2 giây chưa được chứng minh với graph+VLM; chốt Q15 theo benchmark end-to-end.
-
-## 9. Local địa danh và model usage
-
-FastAPI/PostgreSQL đã chọn, local Intel Raptor Lake-P dùng chung RAM hệ thống 16 GB. Bắt đầu encoder CPU, một model/microbatch nhỏ và giới hạn một inference worker để đo RAM; không cấu hình CUDA hoặc local VLM lớn theo giả định có VRAM riêng. VLM API ngoài được phép nhưng endpoint/model/API key và ngân sách chưa chốt. Đề xuất thử shortlist 5–10/target, tối đa 50 ảnh/request cho multi-target và concurrency API=1. Ghi token usage/retries/cost thực, quota cứng trong ứng dụng, timeout và provider credential references; không coi billing alert là hard cap.
-
-Crawl jobs có rate/checkpoint và source/redirect/DNS allowlists, validate nguồn/attribution trước publish, không chạy trong search. Điều phối batch crawl/encode với online để tránh hết RAM; filesystem/object adapter và graph JSON sample lưu ngoài Git, không public ảnh gốc. API budget thử 10–20 USD là đề xuất đợt benchmark, không phải chi phí tháng cố định/phê duyệt gọi model. Chưa chi tiền/tải dataset/deploy trong giai đoạn tài liệu. [MVP địa danh](landmark-mvp-plan.md) ghi rõ các quyết định và đề xuất nguồn/model.
