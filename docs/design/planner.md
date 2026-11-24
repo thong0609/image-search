@@ -1,7 +1,40 @@
-# Planner v1
+# Planner
 
-Planner dùng OpenAI để route câu hỏi và tạo kế hoạch. Chưa thực thi retrieval,
-resolve entity trong catalog, graph hoặc tích hợp FE/BE.
+Planner dùng OpenAI để route câu hỏi và tạo kế hoạch. CLI chỉ lập kế hoạch;
+executor và playground local dùng kế hoạch để chạy retrieval/graph trong phạm vi đã hỗ trợ.
+
+## Prompt đang dùng: làm rõ phạm vi multi-hop
+
+`src/image_search/planner/router.py`: prompt `planner-graph-multihop-scope`.
+Đã sửa theo yêu cầu người dùng để mô tả rõ ảnh đích, entity chưa biết tên và điều kiện
+nhận diện qua cảnh khác. Schema, model GPT-5 mini và executor giữ nguyên.
+
+- Điều kiện trực tiếp mô tả ảnh cần trả: single, kể cả chưa có tên entity.
+- Cần xác định entity từ cảnh/bộ phận khác trước khi lấy ảnh đích: resolve_entity →
+  retrieve_images với dependency trong cùng target; một target như vậy là multi-hop.
+- Bridge không trở thành điều kiện bắt buộc xuất hiện trong ảnh đích. Không tự đoán tên
+  entity hoặc bỏ dependency chỉ vì executor chưa hỗ trợ visual bridge.
+- Số cạnh graph, số điều kiện hay số ảnh không tự quyết định route. Nhiều target vẫn
+  multi-target; GRAPH RULES chỉ mã hóa quan hệ sau khi hiểu phạm vi điều kiện.
+
+Ví dụ: “phòng trưng bày có cửa sổ tròn” là single; “phòng trưng bày của bảo tàng có
+cổng hình vòng cung” cần nhận diện bảo tàng từ cổng rồi tìm phòng, là multi-hop.
+Các ví dụ minh họa quy tắc không cung cấp tên entity/ảnh đáp án trong dataset.
+
+Đã gọi API trên đúng bộ 20 câu dataset multi-hop dev đã dùng ở các lượt trước:
+20/20 request hợp lệ; route 11 multi-hop, 7 single, 2 unclear. Prompt ban đầu nhận
+5/20 và prompt người dùng thử nhận 4/20 multi-hop theo nhãn v2. Một lượt mỗi prompt,
+chưa chứng minh độ ổn định hay khả năng tổng quát hóa.
+
+Cả 11 kế hoạch multi-hop vẫn unsupported ở executor vì cần nhận diện thị giác qua
+cảnh khác. Hybrid Recall@10 canonical 0.2941, nDCG@10 0.2112 trên 17 câu có nhãn dương;
+hai câu robustness recall=0. Một câu unknown không chấm retrieval. p50/p90 toàn pipeline
+26.09/32.66 giây (2 worker); chi phí theo usage ước tính $0.082331, chưa đối soát hóa đơn.
+Báo cáo và đối chiếu từng câu: `var/openai-multihop20-scope-v1/run/comparison.md`.
+
+Tests dùng mock chỉ kiểm tra request/schema, không đo chất lượng model. Các lượt prompt
+trước bên dưới là lịch sử; không áp dụng mặc nhiên cho prompt vừa sửa. Test và dataset
+đã được xem trong quá trình thử nghiệm nên không coi là holdout độc lập mới.
 
 ## Cách chạy
 

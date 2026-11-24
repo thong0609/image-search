@@ -4,7 +4,7 @@ import { QueryProvider } from "@/lib/providers/query-provider";
 import "./globals.css";
 export const metadata: Metadata = {
   title: "Images Search",
-  description: "Tìm ảnh địa danh bằng tiếng Việt",
+  description: "Thử planner và tìm kiếm ảnh trên dataset bằng tiếng Việt",
 };
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
