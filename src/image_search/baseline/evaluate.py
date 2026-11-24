@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from image_search.baseline.benchmark import load_manifest
-from image_search.baseline.utils import (
+from image_search.files import (
     file_hash,
     read_json,
     read_jsonl,

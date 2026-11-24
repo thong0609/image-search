@@ -5,8 +5,8 @@ from collections import Counter
 from neo4j import Query
 
 from image_search.adapters.qdrant.metadata import name_key
-from image_search.modules.graph.build import validate_graph
-from image_search.modules.graph.extraction import digest
+from image_search.graph.build import validate_graph
+from image_search.graph.extraction import digest
 
 RELATIONS = ("LOCATED_IN", "PART_OF", "BRANCH_OF")
 
@@ -227,14 +227,35 @@ class GraphStore:
         )
         return {r["image_id"] for r in rows}
 
-    def select(self, query, previous):
-        """Đường đi giới hạn, loại cạnh cố định; không nhận Cypher từ LLM."""
+    def entity_links(self, image_ids):
+        """image_id -> {entity_id: tên} theo DEPICTS."""
+        rows = self.read(
+            "MATCH (i:Image {dataset_id:$dataset,metadata_sha256:$snapshot})"
+            "-[:DEPICTS]->(e:Entity {dataset_id:$dataset,metadata_sha256:$snapshot}) "
+            "WHERE i.image_id IN $ids "
+            "RETURN i.image_id AS image_id, e.entity_id AS entity_id, e.name AS name",
+            ids=sorted(image_ids),
+        )
+        links = {}
+        for row in rows:
+            links.setdefault(row["image_id"], {})[row["entity_id"]] = row["name"]
+        return links
+
+    def select(self, query, previous, for_visual=False, allow_unknown=False):
+        """Đường đi giới hạn, loại cạnh cố định; không nhận Cypher từ LLM.
+
+        for_visual: phạm vi cho bước nhận diện bằng ảnh; loại/category do planner đặt tên có
+        thể khác metadata nên không lọc. allow_unknown: giữ cả entity chưa có vị trí nào, vì
+        thiếu thông tin không có nghĩa là nằm ở nơi khác.
+        """
         clauses, params = (
             [],
             {
                 "name": name_key(query.target_name) if query.target_name else None,
-                "kind": query.target_kind,
-                "category": name_key(query.target_category) if query.target_category else None,
+                "kind": None if for_visual else query.target_kind,
+                "category": name_key(query.target_category)
+                if query.target_category and not for_visual
+                else None,
             },
         )
         for i, condition in enumerate(query.conditions):
@@ -244,7 +265,25 @@ class GraphStore:
                 anchors = [r["entity_id"] for r in self.named(condition.anchor_name)]
                 if len(anchors) > 1:
                     return {"status": "ambiguous_entity", "entity_ids": []}
+            if for_visual and not anchors:
+                # Graph không biết anchor: không được biến thành tìm toàn kho.
+                return {"status": "no_graph_match", "entity_ids": []}
             params[f"anchor{i}"] = anchors
+            if condition.relations == ["LOCATED_IN"] and condition.direction == "out":
+                # Nằm trong quận thì cũng nằm trong tỉnh; bộ phận nằm nơi công trình nằm.
+                clause = (
+                    "EXISTS { MATCH (e)-[:LOCATED_IN|PART_OF*0..3]->()"
+                    f"-[:LOCATED_IN]->(p{i}:Entity "
+                    "{dataset_id:$dataset,metadata_sha256:$snapshot}) "
+                    f"WHERE p{i}.entity_id IN $anchor{i} }}"
+                )
+                if allow_unknown:
+                    clause = (
+                        f"({clause} OR NOT EXISTS "
+                        "{ MATCH (e)-[:LOCATED_IN|PART_OF*0..3]->()-[:LOCATED_IN]->() })"
+                    )
+                clauses.append(clause)
+                continue
             pattern = "(e)"
             for j, kind in enumerate(condition.relations):
                 if kind not in RELATIONS:

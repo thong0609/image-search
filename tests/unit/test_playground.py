@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from image_search.api.v1.playground import get_playground
 from image_search.config import Settings
 from image_search.main import create_app
-from image_search.playground.service import PlaygroundBusy, PlaygroundService
+from image_search.playground import PlaygroundBusy, PlaygroundService
 
 
 @pytest.fixture
@@ -120,16 +120,40 @@ def test_planner_only_does_not_load_encoder_or_retrieval(model):
     service.load.assert_not_called()
 
 
-def test_planner_errors_and_clarification_do_not_trigger_retrieval(model):
+def listing_engine(strict):
+    engine = Mock()
+    engine.settings.list_size, engine.settings.top_k = 20, 100
+    engine.execute.return_value = strict
+    engine.search.return_value = [{"image_id": "image2", "score": 0.1}]
+    engine.catalog.records = {
+        "image1": [
+            {"entity_id": "A", "entity_name": "Cửa hàng A", "mo_ta": "Bên trong"},
+            {"entity_id": "B", "entity_name": "Cửa hàng B", "mo_ta": "Khác"},
+        ],
+        "image2": [{"entity_id": "C", "entity_name": "Cửa hàng C", "mo_ta": "Chung"}],
+    }
+    return engine
+
+
+def test_planner_error_still_lists_images_from_the_whole_query(model):
     service = PlaygroundService()
-    service.load = Mock(side_effect=AssertionError("Không nạp retrieval"))
+    service.load = Mock()
+    service.engine = listing_engine(None)
     model.return_value = {
         "status": "error",
-        "error_code": "api_http_429",
+        "error_code": "invalid_plan",
         "plan": None,
         "latency_ms": 5,
     }
-    assert service.run("ảnh A", "search", "hybrid")["execution"] is None
+    execution = service.run("ảnh A", "search", "keyword")["execution"]
+    service.engine.execute.assert_not_called()
+    assert execution["status"] == "fallback_results"
+    assert execution["groups"][0]["results"][0]["entity_names"] == ["Cửa hàng C"]
+
+
+def test_clarification_does_not_trigger_retrieval(model):
+    service = PlaygroundService()
+    service.load = Mock(side_effect=AssertionError("Không nạp retrieval"))
     model.return_value = planned(clarify=True)
     assert service.run("ảnh A", "search", "hybrid")["execution"]["status"] == "needs_clarification"
     service.load.assert_not_called()
@@ -138,22 +162,28 @@ def test_planner_errors_and_clarification_do_not_trigger_retrieval(model):
 def test_keyword_search_uses_pipeline_and_provides_same_origin_image_urls(model):
     service = PlaygroundService()
     service.load = Mock()
-    service.engine = Mock()
-    service.engine.execute.return_value = {
-        "status": "candidate_results",
-        "trace": [],
-        "groups": [{"entity_scope": ["A"], "results": [{"image_id": "image1", "score": 0.2}]}],
-    }
-    service.engine.catalog.records = {
-        "image1": [
-            {"entity_id": "A", "entity_name": "Cửa hàng A", "mo_ta": "Bên trong"},
-            {"entity_id": "B", "entity_name": "Cửa hàng B", "mo_ta": "Khác"},
-        ]
-    }
+    found = [{"image_id": "image1", "score": 0.2}]
+    service.engine = listing_engine(
+        {
+            "status": "candidate_results",
+            "trace": [],
+            "groups": [
+                {
+                    "target_id": "t1",
+                    "status": "candidates",
+                    "entity_scope": ["A"],
+                    "candidates": found,
+                    "results": found,
+                    "verification_status": "trusted_metadata_scope",
+                }
+            ],
+        }
+    )
     result = service.run("ảnh A", "search", "keyword")
     service.load.assert_called_once_with(False)
-    assert service.engine.execute.call_args.args[1:] == ("keyword", None)
-    image = result["execution"]["groups"][0]["results"][0]
+    assert service.engine.execute.call_args.args[1:] == ("keyword", {})
+    image, other = result["execution"]["groups"][0]["results"]
+    assert other["entity_names"] == ["Cửa hàng C"] and other["source"] == "query"
     assert image["image_url"] == "/v1/playground/images/image1"
     assert image["entity_names"] == ["Cửa hàng A"]
     assert image["caption"] == "Bên trong"

@@ -1,4 +1,4 @@
-"""Nạp vector SigLIP2 có sẵn và tìm cosine trong Qdrant."""
+"""Lưu vector SigLIP2 và tìm cosine trong Qdrant."""
 
 from uuid import NAMESPACE_URL, uuid5
 
@@ -89,7 +89,7 @@ class QdrantVectors:
             self.client.upsert(self.collection, points, wait=True)
         return self.validate(image_ids, vectors)
 
-    def query_filter(self, eligible=None, entity_ids=None, excluded=None, name=None):
+    def query_filter(self, eligible=None, entity_ids=None):
         must = [
             models.FieldCondition(
                 key="index_sha256", match=models.MatchValue(value=self.index_hash)
@@ -109,44 +109,33 @@ class QdrantVectors:
                     key="entity_ids", match=models.MatchAny(any=sorted(entity_ids))
                 )
             )
-        if name is not None:
-            must.append(
-                models.FieldCondition(key="entity_name_keys", match=models.MatchValue(value=name))
-            )
-        must_not = (
-            [models.HasIdCondition(has_id=[point_id(iid) for iid in sorted(excluded)])]
-            if excluded
-            else []
-        )
-        return models.Filter(must=must, must_not=must_not)
+        return models.Filter(must=must)
 
-    def filtered_payloads(
-        self, eligible=None, entity_ids=None, excluded=None, name=None, fields=None
-    ):
+    def filtered_ids(self, eligible=None, entity_ids=None):
         if eligible is not None and not eligible or entity_ids is not None and not entity_ids:
-            return []
-        result, offset = [], None
+            return set()
+        result, offset = set(), None
         while True:
             points, offset = self.client.scroll(
                 self.collection,
                 limit=256,
                 offset=offset,
-                scroll_filter=self.query_filter(eligible, entity_ids, excluded, name),
-                with_payload=fields if fields is not None else True,
+                scroll_filter=self.query_filter(eligible, entity_ids),
+                with_payload=["image_id"],
                 with_vectors=False,
             )
-            result.extend(p.payload for p in points)
+            result.update(p.payload["image_id"] for p in points)
             if offset is None:
                 return result
 
-    def search(self, vector, limit, eligible=None, entity_ids=None, excluded=None):
+    def search(self, vector, limit, eligible=None, entity_ids=None):
         if eligible is not None and not eligible or entity_ids is not None and not entity_ids:
             return []
         response = self.client.query_points(
             self.collection,
             query=vector.tolist(),
             limit=limit,
-            query_filter=self.query_filter(eligible, entity_ids, excluded),
+            query_filter=self.query_filter(eligible, entity_ids),
             search_params=models.SearchParams(exact=True),
             with_payload=["image_id"],
             with_vectors=False,

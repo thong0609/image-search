@@ -12,7 +12,7 @@ Cập nhật C13: schema SQL còn 9 bảng; các API import/item vẫn giữ tà
 
 Người dùng cần tìm ảnh phù hợp với mô tả trong kho riêng mà không phải nhớ tên file hoặc duyệt thủ công từng thư mục. Kết quả cần đủ liên quan để người dùng chọn được ảnh, có thể xem nguồn và xem toàn bộ ảnh đang hiển thị trong kho, không phân biệt tài khoản.
 
-Sản phẩm tìm ảnh bằng văn bản tiếng Việt trên kho ảnh có metadata. Baseline v2 đã chạy trên CSV hiện có với 1.886 ảnh và 400 câu single/multi-target/multi-hop; xem [kết quả baseline](../baseline/baseline-v2-results.md). Không giới hạn sản phẩm vào miền địa danh. Quy mô 100k–1M là mục tiêu kiến trúc cần kiểm chứng riêng.
+Sản phẩm tìm ảnh bằng văn bản tiếng Việt trên kho ảnh có metadata. Baseline v2 đã chạy trên CSV hiện có với 1.886 ảnh và 400 câu single/multi-target/multi-hop; xem [kết quả baseline](../evaluation/results.md). Không giới hạn sản phẩm vào miền địa danh. Quy mô 100k–1M là mục tiêu kiến trúc cần kiểm chứng riêng.
 
 ## 2. Vai trò và hành trình
 

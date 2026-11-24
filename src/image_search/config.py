@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,6 +14,12 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     storage_root: Path = Path("var/objects")
     log_level: str = "INFO"
+
+
+def configure_logging(level: str) -> None:
+    logging.basicConfig(
+        level=level.upper(), format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
 
 
 @lru_cache

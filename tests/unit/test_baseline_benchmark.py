@@ -7,7 +7,7 @@ from image_search.baseline.benchmark import (
     load_manifest,
     validate_benchmark,
 )
-from image_search.baseline.utils import read_jsonl, write_json, write_jsonl
+from image_search.files import read_jsonl, write_json, write_jsonl
 
 
 def sample_benchmark():

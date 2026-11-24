@@ -6,12 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from image_search.adapters.neo4j.store import GraphStore
-from image_search.modules.graph.build import build_graph, validate_graph
-from image_search.modules.graph.extraction import Extraction, digest, run_extraction
-from image_search.modules.graph.query import GraphQuery, strict_schema
-from image_search.modules.graph.settings import GraphSettings
+from image_search.graph.build import build_graph, validate_graph
+from image_search.graph.extraction import Extraction, digest, run_extraction
+from image_search.graph.query import GraphQuery, strict_schema
+from image_search.graph.settings import GraphSettings
 from image_search.planner.schemas import QueryPlan
-from image_search.retrieval.catalog import Catalog
 
 
 def test_graph_values_are_parameters_and_failures_are_not_hidden():
@@ -25,9 +24,8 @@ def test_graph_values_are_parameters_and_failures_are_not_hidden():
     assert value not in query.text
     assert params["snapshot"] == "pinned"
     driver.execute_query.side_effect = ConnectionError("unavailable")
-    catalog = Catalog([], [], graph_store=graph)
     with pytest.raises(ConnectionError):
-        catalog.resolve("Cửa hàng A")
+        graph.resolve("Cửa hàng A")
 
 
 def test_unsupported_edges_cycles_and_wrong_ids_are_rejected(graph_case):
@@ -127,8 +125,8 @@ def test_build_preserves_shared_images_and_deduplicates_relations():
 
 
 def test_resume_reuses_completed_entity_without_api(tmp_path, monkeypatch):
-    from image_search.baseline.utils import write_json
-    from image_search.modules.graph import extraction
+    from image_search.files import write_json
+    from image_search.graph import extraction
 
     groups = [dict(entity_id="A", part=0, records=[]), dict(entity_id="B", part=0, records=[])]
     monkeypatch.setattr(extraction, "inputs", lambda *args: ([], groups, "csv"))
@@ -171,7 +169,7 @@ def test_resume_reuses_completed_entity_without_api(tmp_path, monkeypatch):
 
 
 def test_api_failure_stops_scheduling_more_entities(tmp_path, monkeypatch):
-    from image_search.modules.graph import extraction
+    from image_search.graph import extraction
 
     groups = [dict(entity_id=str(i), part=0, records=[]) for i in range(10)]
     monkeypatch.setattr(extraction, "inputs", lambda *args: ([], groups, "csv"))
@@ -199,8 +197,8 @@ def test_grouping_keeps_record_pairs_deduplicates_and_includes_no_image_metadata
     import csv
 
     from image_search.baseline.records import REQUIRED_COLUMNS
-    from image_search.baseline.utils import file_hash, write_json
-    from image_search.modules.graph import extraction
+    from image_search.files import file_hash, write_json
+    from image_search.graph import extraction
 
     rows = []
     for eid, caption, title in [
@@ -249,8 +247,8 @@ def test_grouping_keeps_record_pairs_deduplicates_and_includes_no_image_metadata
 
 
 def test_build_cli_uses_reviewed_input_without_api_or_neo4j(tmp_path, monkeypatch):
-    from image_search.baseline.utils import read_json, write_jsonl
-    from image_search.modules.graph import cli
+    from image_search.files import read_json, write_jsonl
+    from image_search.graph import cli
 
     group = {"entity_id": "A", "part": 0, "records": []}
     records = [{"entity_id": "A", "entity_name": "A", "leaf_label": "Cửa hàng"}]

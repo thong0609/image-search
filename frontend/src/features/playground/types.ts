@@ -28,6 +28,7 @@ export type Group = {
   status: string;
   results: ImageResult[];
   entity_scope: string[] | null;
+  verification_status?: string;
 };
 export type RunResult = {
   text: string;

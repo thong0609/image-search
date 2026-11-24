@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from image_search.api.dependencies import get_readiness
+from image_search.api.v1.health import get_readiness
 from image_search.config import Settings
 from image_search.main import create_app
 

@@ -22,7 +22,7 @@ def get_playground(request: Request):
 
 @router.post("/run")
 def run_query(query: PlaygroundQuery, service: Annotated[Any, Depends(get_playground)]):
-    from image_search.playground.service import PlaygroundBusy
+    from image_search.playground import PlaygroundBusy
 
     try:
         return service.run(query.text, query.mode, query.method)

@@ -1,12 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
-from image_search.api.dependencies import get_readiness
 from image_search.health import Readiness
 
 router = APIRouter(prefix="/health", tags=["health"])
+
+
+def get_readiness(request: Request):
+    return request.app.state.readiness
 
 
 @router.get("/live")

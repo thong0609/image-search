@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from image_search.baseline import download
-from image_search.baseline.utils import read_jsonl, write_jsonl
+from image_search.files import read_jsonl, write_jsonl
 
 
 def image_bytes():

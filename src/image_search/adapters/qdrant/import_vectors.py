@@ -6,10 +6,10 @@ from image_search.adapters.qdrant.client import create_qdrant_client
 from image_search.adapters.qdrant.metadata import sync_metadata
 from image_search.adapters.qdrant.vectors import QdrantVectors, read_metadata
 from image_search.baseline.benchmark import load_manifest
-from image_search.baseline.utils import file_hash, read_jsonl
-from image_search.baseline.vectors import build_index
 from image_search.config import get_settings
+from image_search.embedding.index import build_index
 from image_search.embedding.settings import EmbeddingSettings
+from image_search.files import file_hash, read_jsonl
 from image_search.retrieval.catalog import Catalog
 from image_search.retrieval.settings import RetrievalSettings
 

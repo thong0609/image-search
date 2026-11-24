@@ -32,6 +32,7 @@ const examples = [
 const statuses: Record<string, string> = {
   candidate_results: "Đã có ứng viên ảnh",
   execution_error: "Retrieval gặp lỗi",
+  fallback_results: "Kết quả gần đúng theo cả câu",
   candidates: "Có ứng viên",
   partial_results: "Có kết quả một phần",
   unsupported_graph_relation: "Chưa hỗ trợ bước nhận diện hoặc quan hệ này",
@@ -39,7 +40,7 @@ const statuses: Record<string, string> = {
   no_graph_match: "Không tìm thấy entity thỏa điều kiện graph",
   no_candidates: "Không có ảnh phù hợp trong phạm vi tìm kiếm",
   entity_not_found: "Không tìm thấy entity",
-  ambiguous_entity: "Tên entity chưa xác định duy nhất",
+  ambiguous_entity: "Entity chưa xác định duy nhất",
   insufficient_candidates: "Chưa đủ số ảnh yêu cầu",
   needs_clarification: "Cần làm rõ yêu cầu",
 };
@@ -383,6 +384,9 @@ export function Playground() {
                         </div>
                         <p className="group-status">
                           {statusLabel(group.status)}
+                          {group.verification_status ===
+                            "visual_bridge_unverified" &&
+                            " · Nơi chứa được suy đoán từ ảnh tương tự, chưa xác minh"}
                         </p>
                         {!group.results.length && (
                           <div className="no-images">
