@@ -206,7 +206,7 @@ Intel RAM chia sẻ 16 GB không được coi là VRAM dedicated. Chất lượn
 trên bộ nhãn đã xác nhận; xem hướng dẫn baseline để đổi checkpoint và tạo index mới.
 
 
-## Frontend phase 0
+## Frontend thử planner và retrieval
 
 Cài Node.js theo `frontend/.nvmrc` (24.22.2) và npm 11.19.1. Node/npm trong WSL cần được cài trong Linux distro, không chỉ trên Windows. Nếu đã dùng nvm: `cd frontend && nvm install && nvm use`.
 
@@ -227,7 +227,27 @@ npm run build
 npm run start
 ```
 
-`start` chạy production build trên port 3000 sau khi dừng dev server. Trang hiện tại chỉ là shell tối giản với search chưa bật; không giả kết quả hoặc gọi model. Stack: Next.js App Router/TypeScript, Tailwind CSS, shadcn config + Button, TanStack Query và fetch. Thư mục theo feature và quy tắc tích hợp ở [frontend/README.md](frontend/README.md). FE scaffold thuộc phase 0; search/grid/grouping/auth/admin được triển khai từ phase tương ứng trong delivery plan. Cả Node và Next.js chạy local riêng Docker DB.
+Trang chính đã có playground: nhập query, chọn **Chỉ planner** hoặc **Planner + tìm ảnh**,
+xem route, các bước/dependency, ảnh từng target, token và thời gian. Mỗi lần chạy gọi
+OpenAI; bấm câu ví dụ chỉ điền text. Dùng prompt hiện hành trong router.py, không tự đổi
+sang prompt đang thử trong var/. Mặc định chỉ planner để dễ kiểm tra phân loại.
+
+Backend cho playground (terminal ở repo root, dùng `.env` đã có OPENAI_API_KEY):
+
+```bash
+uv sync --frozen --extra baseline --extra planner
+docker compose --profile graph up -d qdrant neo4j
+HF_HUB_OFFLINE=1 uv run uvicorn image_search.main:app --host 127.0.0.1 --port 8000
+```
+
+Cần graph/index đã nhập như hướng dẫn ở trên; không tự xây lại graph hoặc embed ảnh
+khi mở giao diện. Model/index được nạp ở lần tìm ảnh đầu tiên và dùng lại trong process.
+Chế độ chỉ planner không cần nạp Qdrant/Neo4j/encoder. PostgreSQL không cần cho playground;
+readiness scaffold vẫn kiểm tra SQL, tách khỏi khả năng chạy playground.
+
+`start` chạy production build trên port 3000 sau khi dừng dev server. Stack FE giữ nguyên.
+Đây là công cụ local để thử chất lượng, không phải auth/API website production.
+Chi tiết API và hành vi lỗi ở [frontend/README.md](frontend/README.md).
 
 
 Vector retrieval của pipeline dùng Qdrant tại `http://localhost:6333`, collection

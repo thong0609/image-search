@@ -37,6 +37,11 @@ kiểm tra schema/hash và import Neo4j. Planner online dùng OpenAI/GPT-5 mini.
 Phạm vi rà soát: tên/nhãn 185 nhóm và câu metadata thể hiện quan hệ; chưa annotation
 mọi caption. Graph thật đã migration; chưa benchmark planner v3 mới.
 
+Người dùng yêu cầu FE đơn giản để thử chất lượng: thêm playground local xem planner,
+steps/dependency, ảnh và độ trễ trước bước hoàn thiện website. Tái sử dụng Next.js/FastAPI
+hiện có, OpenAI key chỉ ở backend; giữ graph, prompt hiện hành và RRF 1:1. Không tự áp dụng
+prompt ứng viên hoặc thay planner; FE production/auth vẫn để sau.
+
 ## 2. ADR và trạng thái
 
 ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; Neo4j đã chọn cho graph nền C20; quan hệ nghiệp vụ, checkpoint VLM và cấu hình còn lại chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).

@@ -12,7 +12,7 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 5 | Thực thi kế hoạch: graph quan hệ entity cho multi-hop, retrieval theo từng mục tiêu | Graph 319 entity/301 quan hệ đã nhập từ extraction Codex trực tiếp; planner v3 chưa benchmark mới |
 | 6 | Reranking: sắp xếp lại shortlist bằng model phù hợp | Chưa triển khai |
 | 7 | Đánh giá toàn pipeline, chọn cấu hình và tối ưu chất lượng/độ trễ | Đã đo luồng không rerank trên 400 câu; multi-hop và SLO chưa đạt |
-| 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Sau cùng |
+| 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Website production để sau; theo yêu cầu mới đã có playground local thử planner/retrieval |
 
 Embedding ảnh được tạo offline và lưu trực tiếp vào Qdrant; embedding query chỉ ở RAM khi tìm kiếm.
 Metadata model/index và metadata tìm kiếm nằm trong Qdrant; lọc entity trực tiếp theo payload.

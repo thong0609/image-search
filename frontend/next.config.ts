@@ -15,6 +15,8 @@ if (
 }
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Planner và lần nạp encoder đầu có thể vượt timeout proxy mặc định 30 giây.
+  experimental: { proxyTimeout: 180_000 },
   async rewrites() {
     return [
       { source: "/v1/:path*", destination: `${origin.origin}/v1/:path*` },
