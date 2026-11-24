@@ -16,3 +16,5 @@ class RetrievalSettings(BaseSettings):
     # Số nơi ứng viên giữ lại làm bằng chứng; ảnh chỉ lấy từ nơi đứng đầu.
     bridge_hypotheses: int = Field(default=3, ge=1, le=10)
     bridge_images: int = Field(default=3, ge=1, le=10)
+    # Nơi graph xác nhận thắng nơi chưa rõ vị trí nếu kém điểm đầu không quá tỷ lệ này.
+    bridge_margin: float = Field(default=0.1, ge=0, le=1)

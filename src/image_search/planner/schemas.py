@@ -19,6 +19,8 @@ class Step(BaseModel):
     count: int | None = Field(ge=1, le=100)
     depends_on: list[str]
     graph: GraphQuery | None = None
+    # Tên kèm mô tả nhận diện; chỉ dùng khi tên không có trong graph, không lọc ảnh đích.
+    identity_text: str | None = Field(default=None, min_length=1)
 
 
 class QueryPlan(BaseModel):
@@ -65,6 +67,8 @@ class QueryPlan(BaseModel):
             if any(not condition.strip() for condition in step.conditions):
                 raise ValueError("Điều kiện không được rỗng")
             if step.action == "resolve_entity":
+                if step.identity_text is not None:
+                    raise ValueError("identity_text chỉ thuộc bước trả ảnh")
                 if step.count is not None:
                     raise ValueError("Bước xác định entity không yêu cầu số ảnh")
             else:

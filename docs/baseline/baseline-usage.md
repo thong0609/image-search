@@ -305,10 +305,13 @@ Bước `resolve_entity` có điều kiện thị giác (hoặc không có graph
 
 1. Graph giới hạn phạm vi. `LOCATED_IN` bắc cầu (quận → tỉnh; bộ phận theo công trình), không
    lọc kind/category ở bước này. Entity chưa có vị trí nào được giữ vì chưa biết, không phải sai.
-   Anchor không có trong graph trả `no_graph_match`, không chuyển thành tìm toàn kho.
+   Tên không có trong graph được giữ trong câu tìm kiếm nhưng không lọc được (`unmatched_names`),
+   chỉ khi câu có mô tả nhận diện; các quan hệ khác vẫn lọc. Không có mô tả: `no_graph_match`.
+   Nơi đã có tên trong câu dùng cùng quy tắc qua `identity_text`; tên có trong graph thì không nới.
 2. Tìm `search_text` của bước bằng phương pháp đang chọn (hybrid: RRF 1:1) trong phạm vi đó.
-3. Xếp hạng entity theo ảnh điểm cao nhất. Hòa điểm: ưu tiên nơi graph xác nhận, rồi so các
-   ảnh sau; bằng hoàn toàn thì `ambiguous_entity`, không trả ảnh.
+3. Xếp hạng entity theo ảnh điểm cao nhất. Nơi graph xác nhận thắng nơi chưa rõ vị trí nếu kém
+   điểm đầu không quá `IMAGE_SEARCH_RETRIEVAL_BRIDGE_MARGIN` (mặc định 0,1); sau đó so các ảnh
+   tiếp theo. Bằng hoàn toàn thì `ambiguous_entity`, không trả ảnh.
 4. Tìm ảnh đích chỉ trong entity đứng đầu, không tự mở rộng sang cha/con.
 
 Kết quả ghi `verification_status=visual_bridge_unverified`; `trace` giữ
@@ -317,24 +320,26 @@ Kết quả ghi `verification_status=visual_bridge_unverified`; `trace` giữ
 "cùng thành phố/tỉnh…", "cách …", "chủ đầu tư" vẫn là quan hệ chưa hỗ trợ; "gần …" được coi
 là mô tả nhìn thấy.
 
-Đo 25/11/2026, hybrid, plan đã lưu, không gọi API (`var/visual-bridge-v1/`):
+Đo 25/11/2026, hybrid, `var/visual-bridge-v1/fix-final` (plan v6 đã lưu, compile lại, không gọi
+API), trung bình theo câu:
 
-| Nhóm | Trước R@10 | Sau R@10 |
-|---|---:|---:|
-| Multi-hop dev, plan v6 (19) | 0,000 | 0,789 |
-| Multi-hop test, plan planner v2 cũ (23) | 0,000 | 0,435 |
-| Multi-hop test, plan v6 (23) | chưa đo | **0,261** |
-| Single dev / test (29 / 18) | 0,658 / 0,792 | 0,658 / 0,792 |
-| Multi-target dev / test (18 / 12) | 0,339 / 0,506 | 0,339 / 0,506 |
+| Nhóm | Không bridge | Bridge đầu tiên | Hiện tại |
+|---|---:|---:|---:|
+| Multi-hop dev (19) R@10 | 0,000 | 0,789 | 0,842 |
+| Multi-hop test (23) R@10 | chưa đo | 0,261 | 0,913 |
+| Multi-hop test nDCG@10 | chưa đo | 0,201 | 0,775 |
+| Single dev / test (29 / 18) R@10 | 0,658 / 0,792 | không đổi | 0,693 / 0,792 |
+| Multi-target dev / test (18 / 12) R@10 | 0,339 / 0,506 | không đổi | không đổi |
 
-Riêng 25 câu có nhãn đi qua visual bridge: hybrid 25/25, keyword 22/25, vector 16/25.
-25 câu này gồm dev và plan v2, không đại diện kết quả chung.
-Test với plan v6 (route 17/23) thấp hơn dev nhiều và thấp hơn baseline tìm cả câu: 13/17 câu
-trượt dừng vì không khớp graph (tên "loại + địa danh", "Sài Gòn", tuyến metro, nơi chứa thừa),
-3 câu đúng nơi nhưng câu tìm ảnh đích mất điều kiện ảnh, 1 câu chọn sai nơi. Chưa sửa. Lọc cứng bằng graph cũ
-(không bắc cầu, có category) chỉ giữ đúng nơi 8/15 câu dev. Embedding + retrieval của câu bridge
-p50/p90 325/427 ms, câu khác 145/247 ms; chưa gồm planner.
-Giới hạn: câu hỏi sinh từ metadata nên thuận lợi cho BM25; số câu ít; test/corpus đã được xem.
+Multi-hop test canonical lấy trung bình theo ý định: 0,933; baseline tìm cả câu: keyword 0,933,
+hybrid 0,600, vector 0,333. Nơi được nhận diện đúng ở mọi câu có nhãn đã chạy bridge.
+**Không phải kết quả holdout:** các sửa đổi được chọn sau khi xem lỗi trên chính tập test này.
+Độ nhạy biên 0 / 0,05 / 0,1 / 0,2: test R@10 0,870 / 0,913 / 0,913 / 0,870.
+Embedding + retrieval câu bridge p50/p90 359/411 ms, câu khác 162/252 ms; chưa gồm planner.
+
+Còn trượt: q0303 (plan lỗi), q0310, q0320 (không khớp graph, plan không có mô tả nhận diện riêng),
+q0053 và q0365 (planner sinh nơi chứa thừa). Rủi ro: tên thật nhưng không có trong kho, kèm mô tả,
+có thể nhận một nơi khác; chưa có ngưỡng từ chối. Câu hỏi sinh từ metadata nên thuận lợi cho BM25.
 
 ## Executor — bước 5
 

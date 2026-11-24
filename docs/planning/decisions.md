@@ -50,6 +50,10 @@ Người dùng duyệt thêm visual bridge vào executor (25/11/2026), thay quy�
 từ ảnh: dùng Qdrant/BM25/RRF sẵn có, kết quả đánh dấu suy đoán. `LOCATED_IN` khi lọc là bắc cầu.
 Chi tiết ở [hướng dẫn baseline](../baseline/baseline-usage.md#visual-bridge).
 
+Người dùng duyệt nới quy tắc tên không khớp (25/11/2026): khi câu có mô tả nhận diện, tên không
+có trong graph thành mô tả mềm của visual bridge và được ghi trong `unmatched_names`; câu chỉ nêu
+tên vẫn trả rỗng. Nơi graph xác nhận được ưu tiên khi điểm kém không quá 10%.
+
 ## 2. ADR và trạng thái
 
 ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; Neo4j đã chọn cho graph nền C20; quan hệ nghiệp vụ, checkpoint VLM và cấu hình còn lại chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).

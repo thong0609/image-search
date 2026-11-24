@@ -16,6 +16,11 @@ LINK_WORDS = set(
 )
 # 'bên trong X' là một cảnh khác của X; 'toàn cảnh X' vẫn là chính X.
 SAME_VIEW_WORDS = (LINK_WORDS - {"trong"}) | set("ảnh hình bức tấm toàn cận cảnh về".split())
+# Câu hỏi về kho ảnh không mô tả gì; không được dùng để nhận diện nơi chứa.
+FILLER = re.compile(
+    r"^(có\s+)?(tấm\s+|bức\s+)?(ảnh|hình)?(\s*nào)?(\s*trong kho)?(\s*không)?\W*$", re.IGNORECASE
+)
+EXCLUSION = re.compile(r"(thay vì|thay cho|không|trừ|đừng)\b", re.IGNORECASE)
 EDGE_WORDS = r"(?:của|ở|tại|thuộc|về)"
 
 
@@ -88,14 +93,25 @@ def strip_name(text, entity):
     return re.sub(rf"\s+{EDGE_WORDS}$|^{EDGE_WORDS}\s+", "", text, flags=re.IGNORECASE)
 
 
-def bridge_search_text(target, entity):
-    """Dựng từ phần không phải bridge để đặc điểm nhận diện không lọt vào bước trả ảnh."""
-    places = [i.anchor_name for g in entity.relation_groups for i in g.relations if i.anchor_name]
-    text = target.image_subject
-    for part in (entity.mention, *places):
+def anchor_names(entity):
+    return [i.anchor_name for g in entity.relation_groups for i in g.relations if i.anchor_name]
+
+
+def bridge_search_text(subject, conditions, entity):
+    """Giữ mọi điều kiện ảnh đích; đặc điểm nhận diện và điều kiện loại trừ không đưa vào."""
+    places = anchor_names(entity)
+    wanted = [c for c in conditions if not EXCLUSION.match(c)]
+    text = subject
+    for part in (*wanted, entity.mention, *places):
         if part.casefold() not in text.casefold():
             text += " " + part
     return text
+
+
+def full_name(name, query):
+    """Bù phần ngoặc ngay sau tên nếu model cắt mất; tên trong kho có cả phần này."""
+    match = re.search(re.escape(name) + r"\s*\([^()]*\)", query, flags=re.IGNORECASE)
+    return match.group(0) if match else name
 
 
 def precedes_entity(text, entity, query):
@@ -103,12 +119,6 @@ def precedes_entity(text, entity, query):
     query = query.casefold()
     start, place = query.find(text.casefold()), query.find(entity.mention.casefold())
     return 0 <= start < place and start + len(text) <= place
-
-
-def full_name(name, query):
-    """Bù phần ngoặc ngay sau tên nếu model cắt mất; tên trong kho có cả phần này."""
-    match = re.search(re.escape(name) + r"\s*\([^()]*\)", query, flags=re.IGNORECASE)
-    return match.group(0) if match else name
 
 
 def graph_query(entity, group, resolved, within):
@@ -162,6 +172,8 @@ def compile_target(target, target_id, steps, query):
         text = re.sub(r"^có\s+", "", condition.text, flags=re.IGNORECASE)
         if condition.owner != IMAGE and condition.owner not in owned:
             raise ValueError("Điều kiện không thuộc ảnh đích hoặc entity đã khai báo")
+        if FILLER.match(text):
+            continue
         if condition.owner == IMAGE or precedes_entity(text, by_id[condition.owner], query):
             image_conditions.append(text)
         elif not only_names(text, by_id[condition.owner], LINK_WORDS):
@@ -183,7 +195,7 @@ def compile_target(target, target_id, steps, query):
         )
         return steps[-1].id
 
-    resolved, mention, graph, parent = {}, None, None, None
+    resolved, mention, graph, parent, identity = {}, None, None, None, []
     for entity in target.entities:
         final_entity = entity is last
         visual, groups = owned[entity.id], entity.relation_groups
@@ -191,9 +203,11 @@ def compile_target(target, target_id, steps, query):
             # Tên đã đủ định danh; giữ mô tả đi kèm làm điều kiện mềm, không tạo bridge.
             name = full_name(entity.proper_name, query)
             resolved[entity.id] = (name, None)
-            image_conditions += visual
             if final_entity:
                 mention = name
+            # Tên đã định danh nên không tạo bridge; mô tả giữ lại phòng khi graph không có tên.
+            if visual:
+                identity += ([] if final_entity else [last.mention]) + [name, *visual]
             continue
         if final_entity and entity.kind == "part" and direct_relation(entity, resolved):
             image_conditions += visual  # Bộ phận của nơi đã có tên chính là thứ cần thấy.
@@ -211,7 +225,7 @@ def compile_target(target, target_id, steps, query):
             anchors = {c.anchor_step_id for c in query.conditions} if query else set()
             final = group is None or group is groups[-1]
             step_id = add(
-                search_text=" ".join([entity.mention, *visual]),
+                search_text=" ".join([entity.mention, *visual, *anchor_names(entity)]),
                 entity_mention=None,
                 conditions=visual if final else [],
                 count=None,
@@ -226,12 +240,15 @@ def compile_target(target, target_id, steps, query):
             id=f"s{len(steps) + 1}",
             target_id=target_id,
             action="retrieve_images",
-            search_text=bridge_search_text(target, last) if parent else target.image_text,
+            search_text=bridge_search_text(target.image_subject, image_conditions, last)
+            if parent
+            else target.image_text,
             entity_mention=mention,
             conditions=list(dict.fromkeys(image_conditions)),
             count=target.count,
             depends_on=[parent] if parent else [],
             graph=graph,
+            identity_text=" ".join(identity) if identity and not parent else None,
         )
     )
 

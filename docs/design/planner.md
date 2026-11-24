@@ -13,7 +13,8 @@ của từng điều kiện (ảnh hay nơi chứa). `compile_plan` suy ra `Step
 Luật code chính (`tests/unit/test_planner_draft.py`):
 
 - Nơi chứa chưa có tên và có điều kiện riêng: resolve_entity rồi retrieve_images (multi-hop).
-- Nơi chứa có tên riêng: single; mô tả kèm theo là điều kiện mềm.
+- Nơi chứa có tên riêng: single; mô tả kèm theo giữ ở `identity_text`, chỉ dùng khi graph
+  không có tên đó.
 - Một quan hệ trực tiếp với anchor có tên: bộ lọc graph trong bước trả ảnh (single).
   Từ hai quan hệ hoặc đường đi dài hơn: resolve_entity.
 - Ảnh đích chính là nơi đó: mọi mô tả là điều kiện ảnh. "Bên trong X" là cảnh khác của X.
@@ -55,7 +56,7 @@ Replay hybrid không gọi API, plan v2 trong `pipeline-v1` so với plan mới 
 | data20 multi-hop (19), so với prompt cũ | 0,263 | 0,000 |
 
 Multi-hop về 0 ở thời điểm đó: 5 câu trúng trước đây đều bị route nhầm sang single, còn
-executor chưa có visual bridge. Đã bổ sung sau, dev R@10 0,789:
+executor chưa có visual bridge. Đã bổ sung sau, dev R@10 0,842:
 [visual bridge](../baseline/baseline-usage.md#visual-bridge). Bản v5 từng làm giảm single/multi-target vì cắt tên riêng
 dài; v6 sửa lỗi này, còn q0102 bị tách "Phòng vắt sữa" khỏi tên.
 

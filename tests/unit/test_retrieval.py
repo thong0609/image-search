@@ -341,6 +341,10 @@ class FakeGraph:
     def __init__(self, engine, scope=None, confirmed=()):
         self.catalog, self.scope, self.confirmed = engine.catalog, scope, list(confirmed)
         self.selects = []
+        self.known = {"Thương hiệu X"}
+
+    def named(self, name):
+        return [{"entity_id": name}] if name in self.known else []
 
     def select(self, query, previous, for_visual=False, allow_unknown=False):
         self.selects.append((for_visual, allow_unknown))
@@ -434,3 +438,71 @@ def test_visual_bridge_needs_vector_for_its_own_step(engine):
     engine.graph_store = FakeGraph(engine)
     with pytest.raises(ValueError, match="step ID"):
         engine.execute(bridge_plan(), "vector", {"s2": np.array([0, 1])})
+
+
+def test_unknown_anchor_becomes_soft_text_only_with_visual_description(engine):
+    engine.graph_store = graph = FakeGraph(engine, scope=["a"], confirmed=["a"])
+    graph.known = set()
+    vectors = {k: v / np.linalg.norm(v) for k, v in BRIDGE_VECTORS.items()}
+    result = engine.execute(bridge_plan(graph=relation_query()), "vector", vectors)
+    (trace,), (group,) = result["trace"], result["groups"]
+    assert graph.selects == []  # Không lọc được bằng tên graph không biết.
+    assert trace["entity_ids"] == ["b"] and trace["unmatched_names"] == ["Thương hiệu X"]
+    assert trace["hypotheses"][0]["graph_confirmed"] is None
+    assert group["unmatched_names"] == ["Thương hiệu X"]
+    # Cùng quan hệ nhưng không có mô tả nhận diện: vẫn trả rỗng.
+    graph.scope = graph.confirmed = []
+    plan = bridge_plan(conditions=(), graph=relation_query())
+    result = engine.execute(plan, "keyword")
+    assert result["groups"][0]["status"] == "no_graph_match"
+
+
+def test_known_relations_still_filter_when_another_anchor_is_unknown(engine):
+    engine.graph_store = graph = FakeGraph(engine, scope=["a"], confirmed=["a"])
+    query = relation_query()
+    query["conditions"].append({**query["conditions"][0], "anchor_name": "Nơi lạ"})
+    vectors = {k: v / np.linalg.norm(v) for k, v in BRIDGE_VECTORS.items()}
+    result = engine.execute(bridge_plan(graph=query), "vector", vectors)
+    assert result["trace"][0]["entity_ids"] == ["a"]
+    graph.selects.clear()
+    result = engine.execute(bridge_plan(graph={**query, "match": "any"}), "vector", vectors)
+    assert result["trace"][0]["entity_ids"] == ["b"] and graph.selects == []
+
+
+def named_plan(identity):
+    step = make_step(mention="Khu chợ Xa Lạ")
+    step["identity_text"] = identity
+    return make_plan([step])
+
+
+def test_unknown_name_is_identified_by_its_description_or_returns_nothing(engine, monkeypatch):
+    engine.graph_store = graph = FakeGraph(engine, scope=[])
+    graph.source_ids = lambda ids: {i.upper() for i in ids}
+    vectors = {"s1": np.array([0, 1]), "s1:identity": BRIDGE_VECTORS["s1"]}
+    vectors = {k: v / np.linalg.norm(v) for k, v in vectors.items()}
+    result = engine.execute(named_plan("khu chợ cổng đỏ"), "vector", vectors)
+    (trace,), (group,) = result["trace"], result["groups"]
+    assert trace["entity_ids"] == ["b"] and trace["unmatched_names"] == ["Khu chợ Xa Lạ"]
+    assert group["results"][0]["image_id"] == "bi"
+    assert group["verification_status"] == "visual_bridge_unverified"
+    monkeypatch.setattr(engine, "search", lambda *a, **k: pytest.fail("Không tìm toàn kho"))
+    result = engine.execute(named_plan(None), "keyword")
+    assert result["groups"][0]["status"] == "no_graph_match"
+
+
+def test_known_name_never_uses_its_description_to_pick_another_entity(engine):
+    engine.graph_store = FakeGraph(engine, scope=["a"], confirmed=["a"])
+    vectors = {"s1": np.array([0, 1]), "s1:identity": BRIDGE_VECTORS["s1"]}
+    vectors = {k: v / np.linalg.norm(v) for k, v in vectors.items()}
+    result = engine.execute(named_plan("cửa hàng cổng đỏ"), "vector", vectors)
+    assert result["trace"] == []
+    assert result["groups"][0]["graph_entity_ids"] == ["a"]
+    assert result["groups"][0]["verification_status"] == "trusted_metadata_scope"
+
+
+@pytest.mark.parametrize("score,winner", [(0.95, "b"), (0.8, "a")])
+def test_graph_confirmed_place_wins_only_within_margin(engine, monkeypatch, score, winner):
+    ranked(monkeypatch, engine, [("ag", 1.0), ("bg", score)])
+    engine.graph_store = FakeGraph(engine, scope=["a", "b"], confirmed=["b"])
+    result = engine.execute(bridge_plan(graph=relation_query()), "keyword")
+    assert result["trace"][0]["entity_ids"] == [winner]

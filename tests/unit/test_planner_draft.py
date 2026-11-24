@@ -69,6 +69,49 @@ def test_unnamed_container_description_becomes_bridge_and_stays_out_of_target():
     assert "cổng" not in retrieve.search_text and "Huế" in retrieve.search_text
 
 
+def test_target_search_keeps_image_conditions_but_not_bridge_or_exclusions():
+    plan = build(
+        target(
+            "khu vực thờ",
+            [entity("nhà thờ", relations=[relation(name="Huế")])],
+            [("image", "có tượng trắng"), ("image", "thay vì ảnh màu"), ("e1", "cổng sắt")],
+        )
+    )
+    resolve, retrieve = plan.steps
+    assert retrieve.search_text == "khu vực thờ tượng trắng nhà thờ Huế"
+    assert resolve.search_text == "nhà thờ cổng sắt Huế"
+    assert retrieve.identity_text is None
+
+
+@pytest.mark.parametrize("text", ["có ảnh nào trong kho không?", "ảnh trong kho", "có hình không"])
+def test_question_about_the_collection_is_not_a_description(text):
+    plan = build(target("Phòng sữa", [entity("trại", "trại Xanh")], [("e1", text)]))
+    assert plan.steps[0].identity_text is None
+    assert plan.steps[0].conditions == ["Phòng sữa"]
+
+
+@pytest.mark.parametrize("text", ["không có người", "có hình con gà", "ảnh trắng đen"])
+def test_real_descriptions_are_not_dropped_as_filler(text):
+    plan = build(target("Phòng sữa", [entity("trại", "trại Xanh")], [("image", text)]))
+    assert len(plan.steps[0].conditions) == 2
+
+
+def test_description_of_named_anchor_identifies_the_container():
+    plan = build(
+        target(
+            "cổng soát vé",
+            [
+                entity("tuyến xe", "tuyến xe Số 1", id="e1"),
+                entity("nhà ga", id="e2", relations=[relation(entity="e1")]),
+            ],
+            [("e1", "đoàn tàu xanh")],
+        )
+    )
+    (step,) = plan.steps
+    assert plan.query_type == "single"
+    assert step.identity_text == "nhà ga tuyến xe Số 1 đoàn tàu xanh"
+
+
 def test_image_owned_condition_stays_single_with_location_filter():
     plan = build(
         target(
@@ -88,7 +131,8 @@ def test_named_container_never_creates_bridge_but_keeps_description():
     (step,) = plan.steps
     assert plan.query_type == "single"
     assert step.entity_mention == "quán Mộc"
-    assert step.conditions == ["sân hiên", "biển hình lá"]
+    assert step.conditions == ["sân hiên"]
+    assert step.identity_text == "quán Mộc biển hình lá"
 
 
 @pytest.mark.parametrize("subject", ["hải đăng", "ảnh hải đăng", "toàn cảnh hải đăng"])
