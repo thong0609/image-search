@@ -24,11 +24,22 @@ Cập nhật sau baseline v2: dùng dataset CSV hiện có, đã chốt baseline
 | C16 | Một người phát triển, backend FastAPI và PostgreSQL | Người dùng ngày 06/11/2026 |
 | C17 | Triển khai local trước; RAM hệ thống 16 GB, Intel Raptor Lake-P dùng RAM chia sẻ, không VRAM chuyên dụng cố định; cho phép API VLM ngoài | Người dùng và làm rõ phần cứng ngày 06/11/2026 |
 | C18 | Query một mục tiêu, nhiều mục tiêu như “ảnh Hạ Long, ảnh Cát Bà”, và multi-hop có suy luận quan hệ | Người dùng và làm rõ multi-target ngày 06/11/2026 |
+| C20 | Chọn Neo4j; schema nguồn 5 loại node đã triển khai nhưng được thay thế về hướng thiết kế bởi C21, chưa migration | Triển khai trước khi người dùng điều chỉnh hướng |
+| C21 | Tin metadata `approve=yes`, không thêm xác minh nguồn; bỏ SourceRecord/SourcePage/SourceLabel, tập trung quan hệ entity–entity. Chất lượng trước, mở rộng nguồn sau | Người dùng ngày 24/11/2026; đã cho triển khai plan; migration dữ liệu thật chờ OpenAI có credit |
 | C19 | Frontend đơn giản theo phong cách Google Images; Next.js App Router/TypeScript, Tailwind, shadcn/ui, TanStack Query và fetch; code trong frontend/, xây search từ phase 3 | Người dùng yêu cầu đưa đề xuất FE vào kế hoạch |
+
+Theo chỉ đạo mới nhất, chỉ dùng OpenAI trực tiếp với OPENAI_API_KEY;
+model GPT-5 mini (`gpt-5-mini-2025-08-07`). Đã bỏ provider trung gian và cấu hình/key liên quan.
+
+Cập nhật theo yêu cầu tiết kiệm chi phí: Codex trực tiếp lập extraction cho graph hiện tại,
+không gọi API cho phần offline. Có `prepare`/`build` đọc file đã điền,
+kiểm tra schema/hash và import Neo4j. Planner online dùng OpenAI/GPT-5 mini.
+Phạm vi rà soát: tên/nhãn 185 nhóm và câu metadata thể hiện quan hệ; chưa annotation
+mọi caption. Graph thật đã migration; chưa benchmark planner v3 mới.
 
 ## 2. ADR và trạng thái
 
-ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; engine, checkpoint và cấu hình cụ thể chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).
+ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; Neo4j đã chọn cho graph nền C20; quan hệ nghiệp vụ, checkpoint VLM và cấu hình còn lại chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).
 
 | ID | Lựa chọn | Phương án thay thế | Lý do và đánh đổi | Điều kiện xem lại |
 | --- | --- | --- | --- | --- |
@@ -77,7 +88,7 @@ Lịch sử ADR03: 04/11/2026 đề xuất PostgreSQL + pgvector để giảm th
 | Q10 | Một người, FastAPI/PostgreSQL đã chốt; frontend theo C19, deadline còn mở | Toolchain/UI và lịch | Trước cam kết lịch |
 | Q11 | Đã giải quyết: khách search/thumbnail; detail/download cần login, mọi user dùng toàn kho | C09; không phải câu hỏi còn mở | Đã chốt 05/11/2026 |
 | Q12 | Admin cấp tài khoản hay tự đăng ký? Có SSO/quên mật khẩu/email recovery trong MVP không? | Provisioning tài khoản và trải nghiệm khách muốn tải ảnh | Chốt workflow tài khoản |
-| Q13 | Loại thực thể/quan hệ, nguồn chuẩn, độ phủ, quy tắc hợp nhất thực thể và graph engine nào? | Graph schema, chất lượng và consistency | Khóa graph profile và backfill |
+| Q13 | Neo4j và metadata yes đáng tin đã chốt; đã triển khai ba quan hệ và trích xuất OpenAI offline; cần đo chất lượng thực tế, chưa mở rộng quan hệ khác | Graph schema và chất lượng retrieval | Trước triển khai graph quan hệ |
 | Q14 | VLM checkpoint/hosting, quyền gửi ảnh, độ phân giải, prompt/output và ngân sách inference nào? | Rerank quality, VRAM, chi phí | Khóa reranker profile |
 | Q15 | Rerank window, deadline, QPS và có cho phép fallback khi graph/VLM lỗi không? | SLO end-to-end và chính sách degraded | Nghiệm thu pipeline mới |
 

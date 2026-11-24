@@ -11,7 +11,9 @@ from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_
 from image_search.embedding.settings import EmbeddingSettings
 from image_search.embedding.siglip2 import Siglip2Embedding
 from image_search.planner.router import PROMPT, PROMPT_VERSION, make_client, route_query
+from image_search.planner.schemas import QueryPlan
 from image_search.planner.settings import PlannerSettings
+from image_search.retrieval.executor import direct_steps
 from image_search.retrieval.runtime import load_engine
 from image_search.retrieval.settings import RetrievalSettings
 
@@ -23,10 +25,13 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path("var/pipeline-v1"))
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--split", choices=("all", "dev", "test"), default="all")
     args = parser.parse_args()
     if not 1 <= args.workers <= 8:
         parser.error("workers cần trong 1..8")
-    queries = read_jsonl(args.queries)
+    queries = [
+        q for q in read_jsonl(args.queries) if args.split == "all" or q["split"] == args.split
+    ]
     if not queries or len({q["query_id"] for q in queries}) != len(queries):
         parser.error("Query rỗng hoặc trùng ID")
     planner, embedding, retrieval = PlannerSettings(), EmbeddingSettings(), RetrievalSettings()
@@ -50,14 +55,25 @@ def main():
         "image_index_sha256": image_index["index_sha256"],
         "keyword_metadata": engine.keyword_metadata,
         "search_metadata_sha256": image_index["search_metadata_sha256"],
+        "graph_mode": "entity_relations",
+        "graph_sha256": engine.graph_store.graph_hash,
         "method": "hybrid",
         "rrf_weights": [1, 1],
         "workers": args.workers,
         "query_count": len(queries),
+        "split": args.split,
         "expected_or_labels_sent_to_model": False,
         "sources": {
             str(p): file_hash(p)
-            for package in ("planner", "embedding", "retrieval", "baseline", "adapters/qdrant")
+            for package in (
+                "planner",
+                "embedding",
+                "retrieval",
+                "baseline",
+                "adapters/qdrant",
+                "adapters/neo4j",
+                "modules/graph",
+            )
             for p in Path("src/image_search", package).glob("*.py")
         },
         "runner_sha256": file_hash(Path(__file__)),
@@ -86,6 +102,7 @@ def main():
     else:
         args.output_dir.mkdir(parents=True)
         write_json(args.output_dir / "run.json", {"configuration": configuration})
+    (args.output_dir / "executed-runner.py").write_bytes(Path(__file__).read_bytes())
     started = time.perf_counter()
     encoder = Siglip2Embedding(embedding)
     encoder.encode_texts(["ảnh cửa hàng"])  # Warmup trước đo; không gọi API.
@@ -117,15 +134,14 @@ def main():
                 plan = planned["plan"]
                 mapping = None
                 try:
-                    if not plan["needs_clarification"]:
+                    steps = [s.model_dump() for s in direct_steps(QueryPlan.model_validate(plan))]
+                    if not plan["needs_clarification"] and steps:
                         begin = time.perf_counter()
-                        array, details = encoder.encode_texts(
-                            [s["search_text"] for s in plan["steps"]]
-                        )
+                        array, details = encoder.encode_texts([s["search_text"] for s in steps])
                         encode_ms = (time.perf_counter() - begin) * 1000
                         if any(d["truncated"] for d in details):
                             raise ValueError("truncated_query")
-                        mapping = {s["id"]: v for s, v in zip(plan["steps"], array, strict=True)}
+                        mapping = {s["id"]: v for s, v in zip(steps, array, strict=True)}
                     begin = time.perf_counter()
                     result = engine.execute(plan, "hybrid", mapping)
                     executor_ms = (time.perf_counter() - begin) * 1000
@@ -210,6 +226,9 @@ def main():
             "startup_seconds": startup_seconds,
         },
     )
+    encoder.vector_store.client.close()
+    engine.vector_store.client.close()
+    engine.graph_store.driver.close()
     print("Completed", args.output_dir, flush=True)
 
 

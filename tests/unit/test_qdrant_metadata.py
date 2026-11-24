@@ -106,6 +106,16 @@ def test_runtime_does_not_read_source_files_and_bm25_uses_qdrant(snapshot, monke
         "image_search.baseline.utils.read_jsonl",
         lambda *_: pytest.fail("Không được đọc JSONL metadata"),
     )
+    from image_search.adapters.qdrant.metadata import name_key
+
+    class Graph:
+        def resolve(self, name):
+            return {r["entity_id"] for r in snapshot[2] if name_key(r["entity_name"]) == name}
+
+        def images_for(self, ids):
+            return {r["image_id"] for r in snapshot[2] if r["entity_id"] in ids}
+
+    monkeypatch.setattr("image_search.retrieval.runtime.load_graph", lambda *_: Graph())
     engine, corpus, _ = load_engine(
         EmbeddingSettings(_env_file=None, manifest=Path("missing.json")),
         RetrievalSettings(_env_file=None, qdrant_collection="images"),

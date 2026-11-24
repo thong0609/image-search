@@ -16,6 +16,18 @@ services:
     image: qdrant/qdrant:v1.13.6
     ports: ["127.0.0.1:6333:6333"]
     volumes: ["qdrant-data:/qdrant/storage"]
+  neo4j:
+    image: neo4j:5.26.33-community
+    profiles: ["graph"]
+    environment:
+      NEO4J_AUTH: neo4j/${IMAGE_SEARCH_GRAPH_PASSWORD:-change-me}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports: ["127.0.0.1:7474:7474", "127.0.0.1:7687:7687"]
+    volumes: ["neo4j-data:/data"]
+    mem_limit: 2g
 volumes:
+  neo4j-data:
   postgres-data:
   qdrant-data:

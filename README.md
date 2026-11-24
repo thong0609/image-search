@@ -51,16 +51,75 @@ Chi tiết và phép đo: [embedding cho retrieval](docs/baseline/baseline-usage
 ## Retrieval theo planner
 
 Tìm vector/BM25/RRF riêng theo từng mục tiêu. Nhận kế hoạch đã lưu, không gọi OpenAI.
-Giữ shortlist, nhóm kết quả, số ảnh yêu cầu và đường bằng chứng bridge/entity.
-Executor tách các entity mơ hồ thành giả thuyết riêng, không cộng ảnh giữa các nhánh;
-kiểm tra điều kiện trên metadata và ghi rõ phần chưa xác minh thị giác.
+Neo4j giải điều kiện `LOCATED_IN`, `PART_OF`, `BRANCH_OF`; Qdrant lọc ảnh theo
+entity đích trước top-K. BM25 dùng cùng tập ảnh và gộp RRF 1:1.
+Planner v3 thêm điều kiện graph; kế hoạch v2 vẫn đọc được nhưng dependency không có
+điều kiện graph trả `unsupported_graph_relation`. Nhận diện entity chưa biết tên
+bằng đặc điểm thị giác ở ảnh khác chưa hỗ trợ.
 
 ```bash
 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/retrieval-v1/new-results
 ```
 
 Query được mã hóa trực tiếp bằng SigLIP2 rồi tìm trong Qdrant.
-Cần Qdrant đã có vector và metadata tìm kiếm; runtime không đọc CSV/JSONL nguồn hoặc keyword index trên đĩa; [hướng dẫn chi tiết](docs/baseline/baseline-usage.md#retrieval-theo-kế-hoạch).
+Cần Qdrant đã có dữ liệu và graph Neo4j đã import, cùng snapshot; runtime không đọc CSV/JSONL nguồn hoặc keyword index trên đĩa; [hướng dẫn chi tiết](docs/baseline/baseline-usage.md#retrieval-theo-kế-hoạch).
+
+## Graph quan hệ Neo4j
+
+**Trạng thái 24/11/2026:** Codex đã trực tiếp lập extraction, không gọi API.
+Graph thật đã thay bằng 1.886 Image và 319 Entity; 1.932 cạnh DEPICTS,
+220 LOCATED_IN, 61 BRANCH_OF, 20 PART_OF. Không còn node nguồn.
+Phạm vi đọc gồm tên/loại của cả 185 nhóm và các câu caption/tiêu đề thể hiện quan hệ;
+chưa gán nhãn đầy đủ mọi chi tiết trong 2.062 caption. Có 40 ghi chú thiếu/ngoài schema.
+
+Dữ liệu đã điền ở `var/graph-manual-v1/reviewed.jsonl`, bảng quyết định dễ đọc ở
+`decisions.tsv`, graph đã nhập ở `graph.json`, kết quả kiểm tra ở `import.json` và
+`functional-checks.json`. Replay 400 kế hoạch v2 (vector/keyword/hybrid) và báo cáo
+ở `var/graph-manual-v1/replay-v2/report.md`; không gọi lại planner. Multi-hop v2
+không có predicate vẫn unsupported, không coi đây là benchmark multi-hop mới.
+Chạy lại phần chấm mà không chạy model/retrieval:
+
+```bash
+uv run python scripts/report_retrieval_replay.py var/graph-manual-v1/replay-v2
+```
+
+Các file dataset/artifact này không đưa vào Git.
+Giữ hash của từng nhóm metadata để từ chối extraction cũ khi dữ liệu thay đổi.
+
+```bash
+uv sync --frozen --extra baseline --extra planner
+docker compose --profile graph up -d neo4j
+# Xuất metadata để đọc/điền Extraction trực tiếp, không gọi API.
+uv run image-search-graph prepare --output var/graph-manual-v1/groups-new.jsonl
+# Dựng artifact từ reviewed.jsonl, không gọi API/ghi Neo4j; dùng output chưa tồn tại.
+uv run image-search-graph build var/graph-manual-v1/reviewed.jsonl --output var/graph-manual-v1/graph-new.json
+# Import khi đã sẵn sàng thay graph của dataset.
+uv run image-search-graph import var/graph-manual-v1/graph-new.json
+uv run image-search-graph check
+```
+
+Lệnh `extract` qua API vẫn có nếu sau này được yêu cầu; không dùng cho lần dựng graph này.
+Planner online dùng OpenAI trực tiếp với `OPENAI_API_KEY` trong `.env`,
+model `gpt-5-mini-2025-08-07`. Endpoint được cố định `https://api.openai.com/v1`.
+Nếu biến môi trường shell ghi đè model trong `.env`, chỉ định model trong lệnh chạy.
+
+Import thay dataset trong một transaction; sai mapping Qdrant bị chặn trước khi ghi.
+Browser: <http://localhost:7474>, Bolt `bolt://localhost:7687`; user `neo4j`, mật khẩu
+trong `.env`. Volume `images-search_neo4j-data` (`/data`). Không cần embed lại ảnh.
+
+Đánh giá planner v3 mới sẽ gọi API; chỉ chạy khi được yêu cầu chi phí tương ứng.
+Dev trước rồi khóa cấu hình chạy test:
+
+```bash
+HF_HUB_OFFLINE=1 uv run python scripts/run_pipeline_evaluation.py --split dev --output-dir var/pipeline-graph-v1/dev
+uv run python scripts/report_pipeline_evaluation.py var/pipeline-graph-v1/dev
+HF_HUB_OFFLINE=1 uv run python scripts/run_pipeline_evaluation.py --split test --output-dir var/pipeline-graph-v1/test
+uv run python scripts/report_pipeline_evaluation.py var/pipeline-graph-v1/test
+RUN_NEO4J_INTEGRATION=1 uv run pytest -q
+```
+
+Báo cáo tách ba loại câu hỏi, Recall/nDCG, trạng thái thiếu kết quả và p50/p90/p95;
+không dùng test labels để trích graph. [Plan và trạng thái](docs/design/graph-reranking-design.md#10-plan-graph-quan-hệ-từ-metadata-yes).
 
 ## Scaffold hiện có
 

@@ -6,7 +6,8 @@ from image_search.adapters.qdrant.metadata import name_key
 
 
 class Catalog:
-    def __init__(self, records, image_ids, aliases=None, vector_store=None):
+    def __init__(self, records, image_ids, aliases=None, vector_store=None, graph_store=None):
+        self.graph_store = graph_store
         self.vector_store = vector_store
         self.aliases = aliases or {}
         self.image_entities = defaultdict(set)
@@ -41,15 +42,18 @@ class Catalog:
 
     def resolve(self, mention):
         key = name_key(mention)
-        if self.vector_store is None:
-            return set(self.names.get(key, set()))
-        matches = self.vector_store.filtered_payloads(name=key, fields=["records"])
-        entity_ids = {
-            r["entity_id"]
-            for payload in matches
-            for r in payload["records"]
-            if name_key(r["entity_name"]) == key
-        }
+        if self.graph_store is not None:
+            entity_ids = self.graph_store.resolve(key)
+        elif self.vector_store is None:
+            entity_ids = set(self.names.get(key, set()))
+        else:
+            matches = self.vector_store.filtered_payloads(name=key, fields=["records"])
+            entity_ids = {
+                r["entity_id"]
+                for payload in matches
+                for r in payload["records"]
+                if name_key(r["entity_name"]) == key
+            }
         for alias, ids in self.aliases.items():
             if name_key(alias) == key:
                 entity_ids.update(ids)
@@ -59,8 +63,3 @@ class Catalog:
         return (
             set().union(*(self.entity_images[eid] for eid in entity_ids)) if entity_ids else set()
         )
-
-    def bridge_entity(self, iid):
-        eids = self.image_entities[iid]
-        # Không tự chọn địa điểm cho ảnh được gán nhiều entity hoặc nguồn chưa chắc chắn.
-        return next(iter(eids)) if len(eids) == 1 and iid not in self.uncertain else None

@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from image_search.modules.graph.query import GraphQuery
+
 
 class Step(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, strict=True)
@@ -16,6 +18,7 @@ class Step(BaseModel):
     conditions: list[str]
     count: int | None = Field(ge=1, le=100)
     depends_on: list[str]
+    graph: GraphQuery | None = None
 
 
 class QueryPlan(BaseModel):
@@ -46,6 +49,17 @@ class QueryPlan(BaseModel):
             for parent in step.depends_on:
                 if parent not in seen or seen[parent].target_id != step.target_id:
                     raise ValueError("Dependency phải trỏ bước trước đó trong cùng mục tiêu")
+            if step.graph is not None:
+                anchors = {c.anchor_step_id for c in step.graph.conditions if c.anchor_step_id}
+                if step.graph.within_step_id:
+                    anchors.add(step.graph.within_step_id)
+                if anchors != set(step.depends_on):
+                    raise ValueError("Graph phải dùng đủ dependencies làm anchor")
+                for parent in anchors:
+                    if parent and (
+                        parent not in step.depends_on or seen[parent].action != "resolve_entity"
+                    ):
+                        raise ValueError("Graph anchor phải là resolve_entity dependency")
             if step.entity_mention is not None and not step.entity_mention.strip():
                 raise ValueError("Entity mention không được rỗng")
             if any(not condition.strip() for condition in step.conditions):

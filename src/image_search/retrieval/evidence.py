@@ -12,10 +12,6 @@ def inspect_evidence(catalog, image_id, entity_id, conditions):
     linked = catalog.image_entities[image_id]
     if entity_id is not None and entity_id not in linked:
         identity = "not_linked"
-    elif len(linked) != 1:
-        identity = "conflicting"
-    elif image_id in catalog.uncertain:
-        identity = "uncertain"
     else:
         identity = "supported_by_metadata"
     records = [

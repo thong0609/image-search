@@ -9,7 +9,7 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 2 | Planner: phân loại câu, tách mục tiêu và dependency | Đã thử OpenAI prompt v2; tạm giữ nguyên |
 | 3 | Embedding: chọn/thử model ảnh–văn bản, mã hóa ảnh và lập index | Đã kiểm tra/tái sử dụng index SigLIP2; tạo vector theo từng bước planner và đo độ trễ |
 | 4 | Retrieval: mã hóa query của từng bước, tìm vector/keyword và kết hợp hybrid | Đã có vector/BM25/RRF theo mục tiêu, đã chạy thử query dev thật |
-| 5 | Thực thi kế hoạch: ghép retrieval theo từng mục tiêu, entity và bridge cho multi-hop | Đã có đường bằng chứng theo entity, tách giả thuyết và kiểm tra metadata; chưa xác minh thị giác |
+| 5 | Thực thi kế hoạch: graph quan hệ entity cho multi-hop, retrieval theo từng mục tiêu | Graph 319 entity/301 quan hệ đã nhập từ extraction Codex trực tiếp; planner v3 chưa benchmark mới |
 | 6 | Reranking: sắp xếp lại shortlist bằng model phù hợp | Chưa triển khai |
 | 7 | Đánh giá toàn pipeline, chọn cấu hình và tối ưu chất lượng/độ trễ | Đã đo luồng không rerank trên 400 câu; multi-hop và SLO chưa đạt |
 | 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Sau cùng |
@@ -23,3 +23,8 @@ Planner OpenAI hiện chưa đạt ngân sách độ trễ; xử lý ở bước
 
 Tham khảo: [kết quả baseline](../baseline/baseline-v2-results.md),
 [planner](../design/planner.md), [thiết kế hệ thống](../design/system-design.md).
+
+
+Plan graph hiện tại nằm ở [graph search, mục 10](../design/graph-reranking-design.md#10-plan-graph-quan-hệ-từ-metadata-yes).
+Tin metadata `yes`, bỏ node nguồn, ưu tiên quan hệ entity–entity. Mục 8–9 mô tả
+graph cũ chưa được migration. Graph mới đã nhập không dùng API trích xuất; benchmark planner v3 còn chờ.

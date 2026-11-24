@@ -8,11 +8,13 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+from neo4j.exceptions import DriverError, Neo4jError
 
 from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_json, write_jsonl
 from image_search.embedding.settings import EmbeddingSettings
 from image_search.embedding.siglip2 import Siglip2Embedding, plan_steps
 from image_search.planner.schemas import QueryPlan
+from image_search.retrieval.executor import direct_steps
 from image_search.retrieval.runtime import load_engine
 from image_search.retrieval.settings import RetrievalSettings
 
@@ -33,10 +35,10 @@ def write_gallery(path, predictions, corpus):
         content = f"<h2>{html.escape(row['query_id'])} · {row['status']}</h2>"
         content += f"<p>{html.escape(row.get('text', ''))}</p>"
         for step in row.get("trace", []):
-            content += "<h3>Bridge — giả thuyết entity chưa xác minh</h3><div>"
-            for eid, ids in step["entity_hypotheses"].items():
-                content += "".join(card(iid, eid) for iid in ids)
-            content += "</div>"
+            if step.get("status") == "unsupported_graph_relation":
+                content += "<p>Quan hệ graph chưa được hỗ trợ; không chạy bridge cũ.</p>"
+                continue
+            content += "<p>Graph: " + html.escape(str(step.get("entity_ids", []))) + "</p>"
         for group in row.get("groups", []):
             content += (
                 f"<h3>{html.escape(group['target_id'])} · "
@@ -91,6 +93,7 @@ def main():
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
+    engine, encoder = None, None
     try:
         settings, embedding_settings = RetrievalSettings(), EmbeddingSettings()
         if args.rounds < 1:
@@ -105,7 +108,7 @@ def main():
         started = time.perf_counter()
         engine, corpus, index = load_engine(embedding_settings, settings, aliases)
         encoder = None
-        if active_steps and args.method != "keyword":
+        if any(s["action"] == "retrieve_images" for s in active_steps) and args.method != "keyword":
             encoder = Siglip2Embedding(embedding_settings)
         startup_seconds = time.perf_counter() - started
         methods = ("vector", "keyword", "hybrid") if args.method == "all" else (args.method,)
@@ -125,6 +128,9 @@ def main():
                 "aliases_sha256": file_hash(args.aliases) if args.aliases else None,
                 "startup_seconds": startup_seconds,
                 "planner_called": False,
+                "graph_snapshot_sha256": index["search_metadata_sha256"],
+                "graph_mode": "entity_relations",
+                "graph_sha256": engine.graph_store.graph_hash,
                 "source_hashes": {p.name: file_hash(p) for p in Path(__file__).parent.glob("*.py")},
             },
         )
@@ -134,11 +140,12 @@ def main():
                 return {"status": "planner_error", "groups": [], "trace": []}
             plan = QueryPlan.model_validate(row["plan"])
             vectors = None
-            if not plan.needs_clarification and method != "keyword":
-                array, details = encoder.encode_texts([s.search_text for s in plan.steps])
+            steps = direct_steps(plan)
+            if not plan.needs_clarification and steps and method != "keyword":
+                array, details = encoder.encode_texts([s.search_text for s in steps])
                 if any(d["truncated"] for d in details):
                     raise ValueError("Query bị cắt token; không tiếp tục retrieval")
-                vectors = {s.id: v for s, v in zip(plan.steps, array, strict=True)}
+                vectors = {s.id: v for s, v in zip(steps, array, strict=True)}
             return engine.execute(plan, method, vectors)
 
         links = []
@@ -215,5 +222,13 @@ def main():
         (args.output_dir / "index.html").write_text(
             '<meta charset="utf-8"><h1>Retrieval thử nghiệm</h1><ul>' + "".join(links) + "</ul>"
         )
+    except (DriverError, Neo4jError) as error:
+        parser.exit(1, f"Lỗi Neo4j: {type(error).__name__}; kiểm tra dịch vụ và cấu hình graph.\n")
     except (OSError, ValueError, KeyError) as error:
         parser.exit(1, f"Lỗi: {error}\n")
+    finally:
+        if engine is not None:
+            engine.vector_store.client.close()
+            engine.graph_store.driver.close()
+        if encoder is not None:
+            encoder.vector_store.client.close()
