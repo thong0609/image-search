@@ -48,6 +48,20 @@ Dùng `HF_HUB_OFFLINE=1` nếu chỉ muốn đọc model đã có trong cache lo
 Đầu ra gồm `vectors.npy`, `steps.jsonl` ánh xạ query/step/target và `embedding.json`.
 Chi tiết và phép đo: [embedding cho retrieval](docs/baseline/baseline-usage.md#embedding-cho-retrieval).
 
+## Retrieval theo planner
+
+Tìm vector/BM25/RRF riêng theo từng mục tiêu. Nhận kế hoạch đã lưu, không gọi OpenAI.
+Giữ shortlist, nhóm kết quả, số ảnh yêu cầu và đường bằng chứng bridge/entity.
+Executor tách các entity mơ hồ thành giả thuyết riêng, không cộng ảnh giữa các nhánh;
+kiểm tra điều kiện trên metadata và ghi rõ phần chưa xác minh thị giác.
+
+```bash
+image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --embeddings var/retrieval-v1/embeddings --method all --output-dir var/retrieval-v1/new-results
+```
+
+Bỏ `--embeddings` để mã hóa query trực tiếp bằng SigLIP2 trước retrieval.
+Cần index và metadata local đã chuẩn bị; [hướng dẫn chi tiết](docs/baseline/baseline-usage.md#retrieval-theo-kế-hoạch).
+
 ## Scaffold hiện có
 
 Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. hướng dẫn chạy ở `docs/baseline/`, đặc tả hệ thống ở `docs/design/`, kế hoạch sản phẩm ở `docs/planning/`.
@@ -58,6 +72,7 @@ Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 
 - `src/image_search/modules/`: search, crawling, catalog, ingestion, graph, auth, jobs; nghiệp vụ giao tiếp với hệ ngoài qua ports.
 - `src/image_search/adapters/`: PostgreSQL, Qdrant, local object storage; graph/embedding/VLM có chỗ mở rộng.
 - `src/image_search/main.py`: app factory và wiring dependencies; `config.py`: cấu hình môi trường.
+- `src/image_search/retrieval/`: catalog, ba nhánh retrieval, executor và CLI theo kế hoạch.
 - `src/image_search/embedding/`: encoder SigLIP2 dùng chung với image index và CLI mã hóa text/plan.
 - `src/image_search/baseline/`: pipeline baseline độc lập; `cli.py` nhận lệnh,
   `records.py` đọc CSV, `download.py` tải ảnh, `benchmark.py` quản lý bộ nhãn,
