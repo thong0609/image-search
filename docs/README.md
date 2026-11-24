@@ -7,6 +7,7 @@ trạng thái hiện tại và các bước đề xuất được ghi trong lộ
 | Nhóm | Tài liệu |
 |---|---|
 | Baseline hiện tại | [Chạy CLI](baseline/baseline-usage.md), [bộ benchmark](baseline/benchmark-design.md), [kết quả v2](baseline/baseline-v2-results.md) |
+| Planner | [OpenAI planner v1: chạy và đánh giá](design/planner.md) |
 | Thiết kế hệ thống | [Tổng quan](design/system-design.md), [API và auth](design/api-contract.md), [SQL và Qdrant](design/data-model.md) |
 | Pipeline | [Nhập dữ liệu](design/ingestion-design.md), [graph và rerank](design/graph-reranking-design.md), [vận hành](design/operations.md) |
 | Kế hoạch sản phẩm | [PRD](planning/prd.md), [lộ trình](planning/delivery-plan.md), [quyết định](planning/decisions.md) |

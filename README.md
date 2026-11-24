@@ -18,6 +18,20 @@ chạy lại để tiếp tục và thử lại URL lỗi. Đọc các bước c
 [hướng dẫn chạy baseline](docs/baseline/baseline-usage.md), gồm bước sửa query/đáp án trước khi đo.
 Bộ nhãn và quy tắc đánh giá nằm trong [tài liệu benchmark](docs/baseline/benchmark-design.md).
 
+## Planner OpenAI
+
+Planner phân loại câu và tách mục tiêu/dependency, chưa thực thi retrieval.
+
+```bash
+uv sync --frozen --extra baseline --extra planner
+uv run --extra planner image-search-planner check tests/fixtures/planner-cases.jsonl
+```
+
+Cấu hình `OPENAI_API_KEY` trong `.env` để chạy model thật. Xem
+[hướng dẫn planner](docs/design/planner.md) để thử một câu, chạy batch và chấm điểm.
+`src/image_search/planner/` chứa schema, settings, router, CLI và scorer;
+`tests/fixtures/planner-cases.jsonl` chứa 60 câu và nhãn kế hoạch riêng.
+
 ## Scaffold hiện có
 
 Backend modular monolith: một codebase, API và worker chạy riêng. Phase 0 đã có scaffold; crawler/search/auth nghiệp vụ và model handlers triển khai ở các phase sau. hướng dẫn chạy ở `docs/baseline/`, đặc tả hệ thống ở `docs/design/`, kế hoạch sản phẩm ở `docs/planning/`.

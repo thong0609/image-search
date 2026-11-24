@@ -1,10 +1,11 @@
 [project]
 name = "image-search"
 version = "0.1.0"
-description = "Vietnamese landmark image search"
+description = "Vietnamese image search"
 requires-python = ">=3.12,<3.13"
 dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.7,<3", "sqlalchemy>=2.0,<3", "psycopg[binary]>=3.2,<4", "alembic>=1.14,<2", "qdrant-client>=1.13,<2", "pillow>=11,<13", "pyyaml>=6,<7", "httpx>=0.28,<1"]
 [project.optional-dependencies]
+planner = ["openai>=2,<3"]
 baseline = ["numpy>=2,<3", "torch>=2.6,<3", "transformers>=4.57,<5", "sentencepiece>=0.2,<1", "protobuf>=5,<8"]
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
@@ -16,6 +17,7 @@ packages = ["src/image_search"]
 [project.scripts]
 image-search-worker = "image_search.modules.jobs.worker:main"
 image-search-smoke = "image_search.smoke:main"
+image-search-planner = "image_search.planner.cli:main"
 image-search-baseline = "image_search.baseline.cli:main"
 
 [tool.uv.sources]
