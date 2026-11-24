@@ -337,8 +337,29 @@ hybrid 0,600, vector 0,333. Nơi được nhận diện đúng ở mọi câu c�
 Độ nhạy biên 0 / 0,05 / 0,1 / 0,2: test R@10 0,870 / 0,913 / 0,913 / 0,870.
 Embedding + retrieval câu bridge p50/p90 359/411 ms, câu khác 162/252 ms; chưa gồm planner.
 
-Còn trượt: q0303 (plan lỗi), q0310, q0320 (không khớp graph, plan không có mô tả nhận diện riêng),
-q0053 và q0365 (planner sinh nơi chứa thừa). Rủi ro: tên thật nhưng không có trong kho, kèm mô tả,
+Sau khi bỏ nơi chứa thừa trong compile (q0053, q0365), multi-hop test v2 là 23/23; con số này đã
+được tune. Dev còn trượt q0303 (plan lỗi), q0310, q0320.
+
+### Bộ kiểm chứng multi-hop v3
+
+`var/multihop-v3/` (ngoài Git): 24 câu dương trên entity chưa dùng trong multi-hop v2, viết từ ảnh,
+không xem caption; 8 câu về nơi không có trong kho. Đóng băng hash trước khi chạy; một lượt planner
+v6, $0,054. Cùng một tác giả viết, chưa duyệt độc lập; chỉ chấm known positives.
+
+| Hybrid, 24 câu dương | Pipeline | Tìm cả câu |
+|---|---:|---:|
+| Route multi-hop | 24/24 | - |
+| Ảnh đầu đúng nơi | 17/24 | 13/24 |
+| Có ảnh đích ở hạng 1 | 11/24 | 6/24 |
+| Có ảnh đích trong top 10 | 15/24 | 17/24 |
+| 8 câu âm vẫn trả ảnh | 8/8 | 8/8 |
+
+Pipeline hơn ở hạng đầu nhưng kém ở top 10: chỉ lấy ảnh từ một nơi nên chọn sai nơi là mất hết.
+Nguyên nhân sai nơi gồm mô tả chung chung, thiếu vị trí trong graph (Mỹ Đình Pearl, Hàng Đẫy) và một
+địa điểm bị tách nhiều entity (sân Mỹ Đình). Quy tắc biên 10% làm sai q13 trên bộ này. Chưa tune.
+Điểm vector của ảnh nhận diện: dương 0,131–0,203, âm 0,081–0,164; mới là quan sát, chưa đặt ngưỡng.
+
+Rủi ro: tên thật nhưng không có trong kho, kèm mô tả,
 có thể nhận một nơi khác; chưa có ngưỡng từ chối. Câu hỏi sinh từ metadata nên thuận lợi cho BM25.
 
 ## Executor — bước 5

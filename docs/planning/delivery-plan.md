@@ -9,7 +9,7 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 2 | Planner: phân loại câu, tách mục tiêu và dependency | Prompt draft-scope-v6: code suy ra route; multi-hop dev 15/18, test 17/23, chưa đạt SLO |
 | 3 | Embedding: chọn/thử model ảnh–văn bản, mã hóa ảnh và lập index | Đã kiểm tra/tái sử dụng index SigLIP2; tạo vector theo từng bước planner và đo độ trễ |
 | 4 | Retrieval: mã hóa query của từng bước, tìm vector/keyword và kết hợp hybrid | Đã có vector/BM25/RRF theo mục tiêu, đã chạy thử query dev thật |
-| 5 | Thực thi kế hoạch: graph quan hệ entity cho multi-hop, retrieval theo từng mục tiêu | Graph 319 entity/301 quan hệ đã nhập từ extraction Codex trực tiếp; visual bridge đã có, multi-hop R@10 dev 0,842 / test 0,913 (test đã dùng để sửa, cần bộ mới) |
+| 5 | Thực thi kế hoạch: graph quan hệ entity cho multi-hop, retrieval theo từng mục tiêu | Graph 319 entity/301 quan hệ đã nhập từ extraction Codex trực tiếp; visual bridge đã có, multi-hop bộ v3 mới: 15/24 có ảnh đích top 10, câu âm 8/8 vẫn trả ảnh |
 | 6 | Reranking: sắp xếp lại shortlist bằng model phù hợp | Chưa triển khai |
 | 7 | Đánh giá toàn pipeline, chọn cấu hình và tối ưu chất lượng/độ trễ | Đã đo luồng không rerank trên 400 câu; multi-hop và SLO chưa đạt |
 | 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Website production để sau; theo yêu cầu mới đã có playground local thử planner/retrieval |

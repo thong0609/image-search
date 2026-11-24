@@ -195,6 +195,39 @@ def test_described_anchor_is_resolved_before_its_child():
     assert last.depends_on == [shop.id]
 
 
+@pytest.mark.parametrize(
+    "subject,detail", [("thuyền nan", "ngôi đình"), ("thuyền qua cửa hang", "cửa hang")]
+)
+def test_detail_of_description_or_subject_is_not_a_container(subject, detail):
+    plan = build(
+        target(
+            subject,
+            [
+                entity("điểm du lịch", id="e1", relations=[relation(name="Huế")]),
+                entity(detail, id="e2", relations=[relation(entity="e1")]),
+            ],
+            [("e1", "kayak cam trước ngôi đình")],
+        )
+    )
+    resolve, retrieve = plan.steps
+    assert resolve.conditions == ["kayak cam trước ngôi đình"]
+    assert retrieve.depends_on == [resolve.id]
+
+
+def test_nested_container_outside_the_description_is_kept():
+    plan = build(
+        target(
+            "kệ sách",
+            [
+                entity("tòa nhà", id="e1"),
+                entity("hiệu sách", id="e2", relations=[relation(entity="e1")]),
+            ],
+            [("e1", "mái kính")],
+        )
+    )
+    assert len(plan.steps) == 3
+
+
 def test_bare_place_anchor_is_used_as_name():
     plan = build(
         target(

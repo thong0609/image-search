@@ -158,7 +158,25 @@ def direct_relation(entity, resolved):
     return name is not None
 
 
+def without_detail_entity(target):
+    """Bỏ 'nơi chứa' thừa: chi tiết của mô tả hoặc của ảnh đích, gắn vào một nơi chưa có tên."""
+    *rest, last = target.entities or [None]
+    if not rest or last.proper_name or rest[-1].proper_name:
+        return target
+    if any(c.owner == last.id for c in target.conditions):
+        return target
+    linked = {i.anchor_entity_id for g in last.relation_groups for i in g.relations}
+    described = [c.text for c in target.conditions if c.owner == rest[-1].id]
+    if linked != {rest[-1].id} or not described:
+        return target
+    mention = last.mention.casefold()
+    if any(mention in text.casefold() for text in (target.image_subject, *described)):
+        return target.model_copy(update={"entities": rest})
+    return target
+
+
 def compile_target(target, target_id, steps, query):
+    target = without_detail_entity(target)
     owned = {entity.id: [] for entity in target.entities}
     by_id = {entity.id: entity for entity in target.entities}
     if len(owned) != len(target.entities):
