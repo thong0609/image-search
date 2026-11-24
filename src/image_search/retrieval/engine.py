@@ -37,18 +37,18 @@ class RetrievalEngine:
                 raise ValueError("Thiếu vector chuẩn hóa hoặc sai số chiều")
             dense = self.vector_store.search(vector, count, allowed, entity_ids, excluded)
         if method != "vector":
+            sparse = keyword_search(text, self.keyword, len(self.image_ids))
             # Qdrant xác định tập ảnh hợp lệ; BM25 giữ IDF toàn corpus, lọc trước top-K.
-            eligible = {
-                p["image_id"]
-                for p in self.vector_store.filtered_payloads(
-                    allowed, entity_ids, excluded, fields=["image_id"]
-                )
-            }
-            sparse = [
-                r
-                for r in keyword_search(text, self.keyword, len(self.image_ids))
-                if r["image_id"] in eligible
-            ][:count]
+            # Không có phạm vi thì mọi ảnh đều hợp lệ, không cần đọc payload.
+            if not (allowed is None and entity_ids is None and not excluded):
+                eligible = {
+                    p["image_id"]
+                    for p in self.vector_store.filtered_payloads(
+                        allowed, entity_ids, excluded, fields=["image_id"]
+                    )
+                }
+                sparse = [r for r in sparse if r["image_id"] in eligible]
+            sparse = sparse[:count]
         if method == "hybrid":
             return fuse_rankings(dense, sparse, limit, self.settings.rrf_k)
         return (sparse if method == "keyword" else dense)[:limit]

@@ -65,11 +65,13 @@ class PlaygroundService:
                 "total": 0,
             },
         }
-        if mode == "search" and planner["status"] == "ok":
-            from image_search.retrieval.executor import direct_steps
+        if mode == "search":
+            from image_search.retrieval.listing import search_list
 
-            plan = QueryPlan.model_validate(planner["plan"])
-            if plan.needs_clarification:
+            # Planner lỗi vẫn tìm bằng nguyên câu để luôn có danh sách ảnh.
+            ok = planner["status"] == "ok"
+            plan = QueryPlan.model_validate(planner["plan"]) if ok else None
+            if plan is not None and plan.needs_clarification:
                 result["execution"] = {
                     "status": "needs_clarification",
                     "question": plan.clarification_question,
@@ -78,26 +80,17 @@ class PlaygroundService:
                 }
             else:
                 try:
-                    steps = direct_steps(plan)
                     begin = time.perf_counter()
-                    self.load(method != "keyword" and bool(steps))
+                    self.load(method != "keyword")
                     result["timing_ms"]["startup"] = (time.perf_counter() - begin) * 1000
-                    vectors = None
-                    if method != "keyword" and steps:
-                        begin = time.perf_counter()
-                        array, details = self.encoder.encode_texts([s.search_text for s in steps])
-                        if any(d["truncated"] for d in details):
-                            raise ValueError("Query vượt giới hạn token encoder")
-                        vectors = {s.id: v for s, v in zip(steps, array, strict=True)}
-                        result["timing_ms"]["embedding"] = (time.perf_counter() - begin) * 1000
-                    begin = time.perf_counter()
-                    execution = self.engine.execute(plan, method, vectors)
-                    result["timing_ms"]["retrieval"] = (time.perf_counter() - begin) * 1000
+                    execution = search_list(self.engine, self.encoder, text, plan, method)
+                    result["timing_ms"].update(execution.pop("timing_ms"))
                     for group in execution["groups"]:
                         scope = set(group.get("entity_scope") or [])
                         for row in group["results"]:
                             records = self.engine.catalog.records[row["image_id"]]
-                            matched = [r for r in records if not scope or r["entity_id"] in scope]
+                            # Ảnh từ câu tìm chung có thể nằm ngoài phạm vi nơi chứa.
+                            matched = [r for r in records if r["entity_id"] in scope] or records
                             row["image_url"] = f"/v1/playground/images/{row['image_id']}"
                             row["entity_names"] = sorted({r["entity_name"] for r in matched})
                             row["caption"] = matched[0].get("mo_ta", "") if matched else ""

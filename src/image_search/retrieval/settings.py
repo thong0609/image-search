@@ -12,6 +12,8 @@ class RetrievalSettings(BaseSettings):
     top_k: int = Field(default=100, ge=1)
     candidates: int = Field(default=100, ge=1)
     rrf_k: int = Field(default=60, ge=1)
+    # Số ảnh mỗi mục tiêu ở chế độ danh sách; số lượng trong câu không cắt danh sách.
+    list_size: int = Field(default=20, ge=1, le=100)
     default_count: int = Field(default=10, ge=1, le=100)
     # Số nơi ứng viên giữ lại làm bằng chứng; ảnh chỉ lấy từ nơi đứng đầu.
     bridge_hypotheses: int = Field(default=3, ge=1, le=10)

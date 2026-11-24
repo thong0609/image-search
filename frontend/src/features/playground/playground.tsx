@@ -32,6 +32,7 @@ const examples = [
 const statuses: Record<string, string> = {
   candidate_results: "Đã có ứng viên ảnh",
   execution_error: "Retrieval gặp lỗi",
+  fallback_results: "Kết quả gần đúng theo cả câu",
   candidates: "Có ứng viên",
   partial_results: "Có kết quả một phần",
   unsupported_graph_relation: "Chưa hỗ trợ bước nhận diện hoặc quan hệ này",

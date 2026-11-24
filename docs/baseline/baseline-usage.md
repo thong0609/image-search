@@ -362,6 +362,34 @@ Nguyên nhân sai nơi gồm mô tả chung chung, thiếu vị trí trong graph
 Rủi ro: tên thật nhưng không có trong kho, kèm mô tả,
 có thể nhận một nơi khác; chưa có ngưỡng từ chối. Câu hỏi sinh từ metadata nên thuận lợi cho BM25.
 
+## Danh sách kết quả
+
+`retrieval/listing.py` là đường chạy mặc định của CLI, playground và script đánh giá: luôn trả
+danh sách ảnh, mỗi mục tiêu một nhóm tối đa `IMAGE_SEARCH_RETRIEVAL_LIST_SIZE` (20) ảnh.
+Không có ngưỡng từ chối; số ảnh nêu trong câu không cắt danh sách.
+
+- Phạm vi chắc chắn (tên/quan hệ khớp graph): ảnh của phạm vi đứng trước, tìm cả câu lấp phần sau.
+- Nơi suy đoán qua visual bridge: xen kẽ ảnh của nơi đó với tìm cả câu, giữ hạng 1 của nơi đó.
+- Các nơi bằng điểm: lấy ảnh của tất cả, xen kẽ như trên.
+- Không khớp graph, quan hệ chưa hỗ trợ, planner lỗi: tìm cả câu, `status=fallback_results`,
+  lý do ở `resolution_status`. Multi-target dùng phần câu riêng của mục tiêu.
+- Câu cần làm rõ vẫn hỏi lại, không tìm. Mỗi ảnh có `source` là `place` hoặc `query`.
+- `--strict` giữ hành vi cũ, chỉ trả kết quả đúng kế hoạch.
+
+Chọn cách ghép trên v3 (nay là dev): RRF giữa pipeline và cả câu làm giảm hạng 1 (7/24 so với
+11/24); thêm nơi thứ 2–3 không hơn. Đo hybrid, plan đã lưu, `var/list-v1/`:
+
+| Nhóm | Strict R@10 | Danh sách R@10 |
+|---|---:|---:|
+| v3 multi-hop (24), có đích top 10 | 15/24 | 19/24 |
+| v3 multi-hop, đích ở hạng 1 | 11/24 | 11/24 |
+| v2 test multi-hop (23) | 1,000 | 0,913 |
+| v2 test single (18) / multi-target (12) | 0,792 / 0,506 | 0,792 / 0,727 |
+| v2 dev multi-hop (19) / single (29) / multi-target (18) | 0,842 / 0,693 / 0,339 | 0,947 / 0,772 / 0,593 |
+
+Một phần mức tăng multi-target là do không còn cắt theo số ảnh. v2 test multi-hop vẫn đủ 23/23 ở
+top 20. Embedding + retrieval p50/p90 khoảng 291–336/419–473 ms, chưa gồm planner.
+
 ## Executor — bước 5
 
 Graph quan hệ thật đã nhập từ extraction Codex điền trực tiếp, không gọi API.

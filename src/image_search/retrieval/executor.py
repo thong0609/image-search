@@ -285,6 +285,7 @@ class PlanExecutor:
             "unmatched_names": list(unmatched),
             "scope_entities": None if scope is None else len(scope),
             "hypotheses": hypotheses[:kept],
+            "tied_entity_ids": [h["entity_id"] for h in tied] if len(tied) > 1 else [],
         }
 
     def identify_unknown_name(self, step, selection, vectors, method):

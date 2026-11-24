@@ -15,6 +15,7 @@ from image_search.embedding.settings import EmbeddingSettings
 from image_search.embedding.siglip2 import Siglip2Embedding, plan_steps
 from image_search.planner.schemas import QueryPlan
 from image_search.retrieval.executor import direct_steps
+from image_search.retrieval.listing import search_list
 from image_search.retrieval.runtime import load_engine
 from image_search.retrieval.settings import RetrievalSettings
 
@@ -91,6 +92,9 @@ def main():
         "--aliases", type=Path, help="JSON alias -> danh sách entity ID có trong catalog"
     )
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument(
+        "--strict", action="store_true", help="Chỉ kết quả đúng kế hoạch, không lấp bằng cả câu"
+    )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     engine, encoder = None, None
@@ -108,7 +112,9 @@ def main():
         started = time.perf_counter()
         engine, corpus, index = load_engine(embedding_settings, settings, aliases)
         encoder = None
-        if any(s["action"] == "retrieve_images" for s in active_steps) and args.method != "keyword":
+        if args.method != "keyword" and (
+            not args.strict or any(s["action"] == "retrieve_images" for s in active_steps)
+        ):
             encoder = Siglip2Embedding(embedding_settings)
         startup_seconds = time.perf_counter() - started
         methods = ("vector", "keyword", "hybrid") if args.method == "all" else (args.method,)
@@ -117,6 +123,7 @@ def main():
             {
                 "plans_sha256": file_hash(args.plans),
                 "method": args.method,
+                "strict": args.strict,
                 "settings": settings.model_dump(mode="json"),
                 "embedding_settings": embedding_settings.model_dump(mode="json"),
                 "rounds": args.rounds,
@@ -136,6 +143,11 @@ def main():
         )
 
         def execute(row, method):
+            if not args.strict and row.get("text"):
+                plan = row["plan"] if row["status"] == "ok" else None
+                result = search_list(engine, encoder, row["text"], plan, method)
+                result.pop("timing_ms")
+                return result
             if row["status"] == "error":
                 return {"status": "planner_error", "groups": [], "trace": []}
             plan = QueryPlan.model_validate(row["plan"])

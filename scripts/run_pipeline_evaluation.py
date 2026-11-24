@@ -11,9 +11,8 @@ from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_
 from image_search.embedding.settings import EmbeddingSettings
 from image_search.embedding.siglip2 import Siglip2Embedding
 from image_search.planner.router import PROMPT, PROMPT_VERSION, make_client, route_query
-from image_search.planner.schemas import QueryPlan
 from image_search.planner.settings import PlannerSettings
-from image_search.retrieval.executor import direct_steps
+from image_search.retrieval.listing import search_list
 from image_search.retrieval.runtime import load_engine
 from image_search.retrieval.settings import RetrievalSettings
 
@@ -128,26 +127,14 @@ def main():
             acquired = time.perf_counter()
             encode_ms = 0
             executor_ms = 0
-            if planned["status"] != "ok":
-                result = {"status": "planner_error", "groups": [], "trace": []}
-            else:
-                plan = planned["plan"]
-                mapping = None
-                try:
-                    steps = [s.model_dump() for s in direct_steps(QueryPlan.model_validate(plan))]
-                    if not plan["needs_clarification"] and steps:
-                        begin = time.perf_counter()
-                        array, details = encoder.encode_texts([s["search_text"] for s in steps])
-                        encode_ms = (time.perf_counter() - begin) * 1000
-                        if any(d["truncated"] for d in details):
-                            raise ValueError("truncated_query")
-                        mapping = {s["id"]: v for s, v in zip(steps, array, strict=True)}
-                    begin = time.perf_counter()
-                    result = engine.execute(plan, "hybrid", mapping)
-                    executor_ms = (time.perf_counter() - begin) * 1000
-                except (ValueError, KeyError) as exc:
-                    error = type(exc).__name__
-                    result = {"status": "execution_error", "groups": [], "trace": []}
+            plan = planned["plan"] if planned["status"] == "ok" else None
+            try:
+                result = search_list(engine, encoder, query["text"], plan, "hybrid")
+                timing = result.pop("timing_ms")
+                encode_ms, executor_ms = timing["embedding"], timing["retrieval"]
+            except (ValueError, KeyError) as exc:
+                error = type(exc).__name__
+                result = {"status": "execution_error", "groups": [], "trace": []}
         record = {
             "query_id": qid,
             "text": query["text"],

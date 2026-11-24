@@ -54,6 +54,10 @@ Người dùng duyệt nới quy tắc tên không khớp (25/11/2026): khi câu
 có trong graph thành mô tả mềm của visual bridge và được ghi trong `unmatched_names`; câu chỉ nêu
 tên vẫn trả rỗng. Nơi graph xác nhận được ưu tiên khi điểm kém không quá 10%.
 
+Người dùng chốt hướng kiểu Google Images (25/11/2026): luôn trả danh sách ảnh, không từ chối;
+bỏ quy tắc "không khớp thì trả rỗng, không tìm toàn kho"; multi-target tạm giữ nhóm riêng; số ảnh
+nêu trong câu không cắt danh sách.
+
 ## 2. ADR và trạng thái
 
 ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; Neo4j đã chọn cho graph nền C20; quan hệ nghiệp vụ, checkpoint VLM và cấu hình còn lại chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).
