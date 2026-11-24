@@ -3,7 +3,6 @@
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 router = APIRouter(prefix="/v1/playground", tags=["playground"])
@@ -37,12 +36,3 @@ def run_query(query: PlaygroundQuery, service: Annotated[Any, Depends(get_playgr
         raise HTTPException(
             503, "Backend chưa sẵn sàng. Kiểm tra OpenAI, Qdrant và Neo4j."
         ) from None
-
-
-@router.get("/images/{image_id}")
-def preview_image(image_id: str, service: Annotated[Any, Depends(get_playground)]):
-    # Chỉ phục vụ ID đã có trong corpus, không nhận đường dẫn từ trình duyệt.
-    path = service.image_path(image_id)
-    if path is None:
-        raise HTTPException(404, "Không tìm thấy ảnh.")
-    return FileResponse(path, headers={"X-Content-Type-Options": "nosniff"})

@@ -12,7 +12,7 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 5 | Thực thi kế hoạch: graph, visual bridge, danh sách kết quả | Đã có; một số quan hệ chưa hỗ trợ |
 | 6 | Reranking | Chưa triển khai |
 | 7 | Đánh giá, tối ưu chất lượng và độ trễ | Đang làm; SLO chưa đạt |
-| 8 | API/website production, đăng nhập | Chưa triển khai; có playground local |
+| 8 | API/website, đăng nhập | Có màn hình demo tìm ảnh và playground local; chưa có đăng nhập, quản trị |
 
 Chi tiết: [luồng tìm kiếm](../design/search-pipeline.md), [kết quả](../evaluation/results.md),
 [quyết định](decisions.md).
