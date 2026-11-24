@@ -1,20 +1,42 @@
-"""Thực thi điều kiện graph trước retrieval; không suy bridge từ top ảnh."""
+"""Thực thi điều kiện graph, nhận diện entity qua ảnh (visual bridge) rồi tìm ảnh đích."""
+
+import re
 
 from image_search.adapters.qdrant.metadata import name_key
 from image_search.modules.graph.query import GraphQuery
 from image_search.planner.schemas import QueryPlan
 from image_search.retrieval.evidence import inspect_evidence, metadata_supported
 
+# Quan hệ không nhìn thấy trong ảnh và không có trong graph; không giả làm đặc điểm thị giác.
+UNSUPPORTED_RELATION = re.compile(
+    r"^(cùng (thành phố|tỉnh|quận|huyện|phường|xã|tuyến)|cách\s|chủ đầu tư|do .+ (đầu tư|xây))",
+    re.IGNORECASE,
+)
+
+
+def visual_bridge(step):
+    """Bước nhận diện entity cần nhìn ảnh, có thể kèm phạm vi graph."""
+    return (
+        step.action == "resolve_entity"
+        and (step.graph is None or bool(step.conditions))
+        and not any(UNSUPPORTED_RELATION.match(c) for c in step.conditions)
+    )
+
 
 def direct_steps(plan):
-    # Giữ tên hàm để tương thích caller cũ; gồm cả retrieval sau graph resolve.
+    # Các bước cần vector: tìm ảnh đích và nhận diện entity qua ảnh.
     supported, result = set(), []
     for step in plan.steps:
         parents_ok = all(parent in supported for parent in step.depends_on)
+        if not parents_ok:
+            continue
         if step.action == "resolve_entity":
-            if parents_ok and step.graph is not None and not step.conditions:
+            visual = visual_bridge(step)
+            if visual:
+                result.append(step)
+            if visual or (step.graph is not None and not step.conditions):
                 supported.add(step.id)
-        elif parents_ok:
+        else:
             result.append(step)
     return result
 
@@ -172,6 +194,71 @@ class PlanExecutor:
         group["image_conditions"] = step.conditions
         return group
 
+    def resolve_visual(self, step, resolved, vector, method):
+        """Tìm ảnh khớp đặc điểm nhận diện, xếp hạng entity theo ảnh điểm cao nhất."""
+        graph, scope, confirmed = self.engine.graph_store, None, None
+        unresolved = {"entity_ids": [], "method": "visual_bridge", "hypotheses": []}
+        if step.graph is not None:
+            selection = graph.select(step.graph, resolved, for_visual=True, allow_unknown=True)
+            if selection["status"] != "resolved":
+                return {**unresolved, "status": selection["status"]}
+            scope = set(selection["entity_ids"])
+            strict = graph.select(step.graph, resolved, for_visual=True)
+            confirmed = set(strict["entity_ids"])
+        elif step.depends_on:
+            scope = set.intersection(*(resolved[p] for p in step.depends_on))
+        found = self.engine.search(
+            step.search_text,
+            vector,
+            method,
+            self.settings.top_k,
+            entity_ids=None if scope is None else graph.source_ids(scope),
+        )
+        links = graph.entity_links({r["image_id"] for r in found})
+        ranked = {}
+        for row in found:
+            for entity_id, name in links.get(row["image_id"], {}).items():
+                if scope is None or entity_id in scope:
+                    item = ranked.setdefault(
+                        entity_id,
+                        {
+                            "entity_id": entity_id,
+                            "name": name,
+                            "score": row["score"],
+                            "graph_confirmed": None
+                            if confirmed is None
+                            else entity_id in confirmed,
+                            "images": [],
+                        },
+                    )
+                    if len(item["images"]) < self.settings.bridge_images:
+                        item["images"].append({"image_id": row["image_id"], "score": row["score"]})
+
+        # RRF hay bằng điểm do đổi hạng giữa hai nhánh: ưu tiên nơi graph xác nhận, rồi so ảnh sau.
+        def strength(item):
+            scores = [-image["score"] for image in item["images"]]
+            scores += [0.0] * (self.settings.bridge_images - len(scores))
+            return scores[0], not item["graph_confirmed"], scores[1:]
+
+        hypotheses = sorted(ranked.values(), key=lambda h: (strength(h), h["entity_id"]))
+        # Bằng nhau hoàn toàn thì không tự chọn một nơi; gồm ảnh chung của nhiều nơi.
+        tied = [h for h in hypotheses if strength(h) == strength(hypotheses[0])]
+        status = (
+            "no_candidates"
+            if not hypotheses
+            else "ambiguous_entity"
+            if len(tied) > 1
+            else "resolved"
+        )
+        kept = max(self.settings.bridge_hypotheses, len(tied))
+        return {
+            "status": status,
+            "entity_ids": [hypotheses[0]["entity_id"]] if status == "resolved" else [],
+            "method": "visual_bridge",
+            "scope_entities": None if scope is None else len(scope),
+            "hypotheses": hypotheses[:kept],
+        }
+
     def empty_group(self, step, status):
         return {
             "target_id": step.target_id,
@@ -218,7 +305,7 @@ class PlanExecutor:
             raise ValueError("Phương pháp không hợp lệ")
         if method != "keyword" and set(vectors or {}) != {s.id for s in direct_steps(plan)}:
             raise ValueError("Vector không khớp step ID được hỗ trợ của kế hoạch")
-        groups, trace, resolved, states = [], [], {}, {}
+        groups, trace, resolved, states, guessed = [], [], {}, {}, set()
         graph = self.engine.graph_store
         for step in plan.steps:
             failed = next(
@@ -233,7 +320,13 @@ class PlanExecutor:
             if failed:
                 selection = {"status": failed, "entity_ids": []}
             elif step.action == "resolve_entity" and (step.graph is None or step.conditions):
-                selection = {"status": "unsupported_graph_relation", "entity_ids": []}
+                if graph is not None and visual_bridge(step):
+                    selection = self.resolve_visual(
+                        step, resolved, (vectors or {}).get(step.id), method
+                    )
+                    guessed.add(step.id)
+                else:
+                    selection = {"status": "unsupported_graph_relation", "entity_ids": []}
             elif step.graph is not None:
                 selection = (
                     graph.select(step.graph, resolved)
@@ -264,6 +357,8 @@ class PlanExecutor:
                     else "no_graph_match",
                     "entity_ids": sorted(ids),
                 }
+            if guessed & set(step.depends_on):
+                guessed.add(step.id)
             if step.action == "resolve_entity":
                 resolved[step.id] = set(selection["entity_ids"])
                 states[step.id] = selection["status"]
@@ -282,6 +377,10 @@ class PlanExecutor:
                     group = self.retrieve_graph(
                         step, set(selection["entity_ids"]), (vectors or {}).get(step.id), method
                     )
+                    if step.id in guessed:
+                        # Nơi chứa suy từ ảnh tương tự, chưa được xác minh.
+                        group["entity_hypotheses_unverified"] = True
+                        group["verification_status"] = "visual_bridge_unverified"
             else:
                 scope = None
                 if step.entity_mention is not None:
@@ -304,7 +403,7 @@ class PlanExecutor:
             "trace": trace,
             "limitations": [
                 "Chỉ hỗ trợ LOCATED_IN/PART_OF/BRANCH_OF có trong metadata.",
-                "Nhận diện entity bằng đặc điểm thị giác qua ảnh khác chưa hỗ trợ.",
+                "Entity nhận diện qua ảnh khác là suy đoán theo điểm tìm kiếm, chưa xác minh.",
                 "Điều kiện ảnh được xếp hạng bằng RRF; chưa rerank.",
             ],
         }

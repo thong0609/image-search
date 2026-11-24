@@ -222,8 +222,12 @@ def test_condition_evidence_keeps_vietnamese_diacritics(engine):
 
 
 @pytest.mark.parametrize("method", ["vector", "keyword", "hybrid"])
-def test_unsupported_relation_never_runs_old_bridge_retrieval(engine, monkeypatch, method):
+def test_relation_outside_graph_and_images_never_searches(engine, monkeypatch, method):
+    from unittest.mock import Mock
+
+    engine.graph_store = Mock()
     bridge = make_step(action="resolve_entity")
+    bridge["conditions"] = ["cùng thành phố với chợ"]
     target = make_step("s2", deps=["s1"])
     monkeypatch.setattr(engine, "search", lambda *a, **k: pytest.fail("Không chạy bridge cũ"))
     result = engine.execute(make_plan([bridge, target], "multi-hop"), method)
@@ -329,15 +333,104 @@ def test_graph_dependency_passes_resolved_ids_and_missing_match_never_searches(e
     graph.source_ids.assert_not_called()
 
 
-def test_visual_condition_in_resolve_step_is_not_silently_ignored(engine):
-    from unittest.mock import Mock
+class FakeGraph:
+    """Graph nhỏ: entity chuẩn a/b/c ứng với nguồn A/B/C của fixture."""
 
-    graph = Mock()
-    engine.graph_store = graph
+    names = {"a": "Cửa hàng A", "b": "Cửa hàng B", "c": "Cửa hàng C"}
+
+    def __init__(self, engine, scope=None, confirmed=()):
+        self.catalog, self.scope, self.confirmed = engine.catalog, scope, list(confirmed)
+        self.selects = []
+
+    def select(self, query, previous, for_visual=False, allow_unknown=False):
+        self.selects.append((for_visual, allow_unknown))
+        ids = self.scope if allow_unknown else self.confirmed
+        return {"status": "resolved" if ids else "no_graph_match", "entity_ids": ids}
+
+    def source_ids(self, ids):
+        return {i.upper() for i in ids}
+
+    def images_for(self, source_ids):
+        return self.catalog.images_for(source_ids)
+
+    def entity_links(self, image_ids):
+        return {
+            i: {e.lower(): self.names[e.lower()] for e in self.catalog.image_entities[i]}
+            for i in image_ids
+        }
+
+
+def bridge_plan(conditions=("cổng đỏ",), graph=None):
     bridge = make_step(action="resolve_entity")
-    bridge.update(graph=relation_query(), conditions=["cổng đỏ"])
-    result = engine.execute(
-        make_plan([bridge, make_step("s2", deps=["s1"])], "multi-hop"), "keyword"
+    bridge.update(conditions=list(conditions), graph=graph)
+    return make_plan([bridge, make_step("s2", deps=["s1"])], "multi-hop")
+
+
+# Vector gần ảnh 'bg' (Cửa hàng B) nhất; ảnh đích gần 'bi'.
+BRIDGE_VECTORS = {"s1": np.array([0.99, 0.141]), "s2": np.array([0, 1])}
+
+
+def test_visual_bridge_identifies_entity_then_searches_only_its_images(engine):
+    engine.graph_store = FakeGraph(engine)
+    vectors = {k: v / np.linalg.norm(v) for k, v in BRIDGE_VECTORS.items()}
+    result = engine.execute(bridge_plan(), "vector", vectors)
+    (trace,), (group,) = result["trace"], result["groups"]
+    assert trace["method"] == "visual_bridge" and trace["entity_ids"] == ["b"]
+    assert trace["hypotheses"][0]["images"][0]["image_id"] == "bg"
+    assert group["results"][0]["image_id"] == "bi"
+    assert all("B" in engine.catalog.image_entities[r["image_id"]] for r in group["candidates"])
+
+
+def test_visual_bridge_result_is_marked_as_unverified_hypothesis(engine):
+    engine.graph_store = FakeGraph(engine)
+    vectors = {k: v / np.linalg.norm(v) for k, v in BRIDGE_VECTORS.items()}
+    group = engine.execute(bridge_plan(), "vector", vectors)["groups"][0]
+    assert group["entity_hypotheses_unverified"] is True
+    assert group["verification_status"] == "visual_bridge_unverified"
+
+
+def test_visual_bridge_scope_is_applied_before_ranking(engine):
+    engine.graph_store = graph = FakeGraph(engine, scope=["a"], confirmed=["a"])
+    vectors = {k: v / np.linalg.norm(v) for k, v in BRIDGE_VECTORS.items()}
+    result = engine.execute(bridge_plan(graph=relation_query()), "vector", vectors)
+    assert result["trace"][0]["entity_ids"] == ["a"]
+    assert result["trace"][0]["hypotheses"][0]["graph_confirmed"] is True
+    assert graph.selects == [(True, True), (True, False)]
+
+
+def test_visual_bridge_without_graph_match_never_searches_everything(engine, monkeypatch):
+    engine.graph_store = FakeGraph(engine, scope=[])
+    monkeypatch.setattr(engine, "search", lambda *a, **k: pytest.fail("Không tìm toàn kho"))
+    result = engine.execute(bridge_plan(graph=relation_query()), "keyword")
+    assert result["groups"][0]["status"] == "no_graph_match"
+
+
+def ranked(monkeypatch, engine, rows):
+    monkeypatch.setattr(
+        engine, "search", lambda *a, **k: [{"image_id": i, "score": s} for i, s in rows]
     )
-    assert result["status"] == "unsupported_graph_relation"
-    graph.select.assert_not_called()
+
+
+def test_shared_top_image_with_no_other_evidence_is_ambiguous(engine, monkeypatch):
+    engine.graph_store = FakeGraph(engine)
+    ranked(monkeypatch, engine, [("00-conflict", 1.0)])
+    result = engine.execute(bridge_plan(), "keyword")
+    assert result["trace"][0]["status"] == "ambiguous_entity"
+    assert {h["entity_id"] for h in result["trace"][0]["hypotheses"]} == {"a", "b"}
+    assert result["groups"][0]["results"] == []
+
+
+def test_equal_scores_prefer_graph_confirmed_then_next_images(engine, monkeypatch):
+    rows = [("ag", 1.0), ("bg", 1.0), ("ai", 0.5)]
+    ranked(monkeypatch, engine, rows)
+    engine.graph_store = FakeGraph(engine)
+    assert engine.execute(bridge_plan(), "keyword")["trace"][0]["entity_ids"] == ["a"]
+    engine.graph_store = FakeGraph(engine, scope=["a", "b"], confirmed=["b"])
+    plan = bridge_plan(graph=relation_query())
+    assert engine.execute(plan, "keyword")["trace"][0]["entity_ids"] == ["b"]
+
+
+def test_visual_bridge_needs_vector_for_its_own_step(engine):
+    engine.graph_store = FakeGraph(engine)
+    with pytest.raises(ValueError, match="step ID"):
+        engine.execute(bridge_plan(), "vector", {"s2": np.array([0, 1])})

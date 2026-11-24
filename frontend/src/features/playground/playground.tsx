@@ -39,7 +39,7 @@ const statuses: Record<string, string> = {
   no_graph_match: "Không tìm thấy entity thỏa điều kiện graph",
   no_candidates: "Không có ảnh phù hợp trong phạm vi tìm kiếm",
   entity_not_found: "Không tìm thấy entity",
-  ambiguous_entity: "Tên entity chưa xác định duy nhất",
+  ambiguous_entity: "Entity chưa xác định duy nhất",
   insufficient_candidates: "Chưa đủ số ảnh yêu cầu",
   needs_clarification: "Cần làm rõ yêu cầu",
 };
@@ -383,6 +383,9 @@ export function Playground() {
                         </div>
                         <p className="group-status">
                           {statusLabel(group.status)}
+                          {group.verification_status ===
+                            "visual_bridge_unverified" &&
+                            " · Nơi chứa được suy đoán từ ảnh tương tự, chưa xác minh"}
                         </p>
                         {!group.results.length && (
                           <div className="no-images">

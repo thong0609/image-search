@@ -53,9 +53,9 @@ Chi tiết và phép đo: [embedding cho retrieval](docs/baseline/baseline-usage
 Tìm vector/BM25/RRF riêng theo từng mục tiêu. Nhận kế hoạch đã lưu, không gọi OpenAI.
 Neo4j giải điều kiện `LOCATED_IN`, `PART_OF`, `BRANCH_OF`; Qdrant lọc ảnh theo
 entity đích trước top-K. BM25 dùng cùng tập ảnh và gộp RRF 1:1.
-Planner v3 thêm điều kiện graph; kế hoạch v2 vẫn đọc được nhưng dependency không có
-điều kiện graph trả `unsupported_graph_relation`. Nhận diện entity chưa biết tên
-bằng đặc điểm thị giác ở ảnh khác chưa hỗ trợ.
+Entity chưa biết tên được nhận diện qua ảnh khác ([visual bridge](docs/baseline/baseline-usage.md#visual-bridge)),
+kết quả đánh dấu suy đoán chưa xác minh. Quan hệ ngoài graph và không nhìn thấy được trả
+`unsupported_graph_relation`.
 
 ```bash
 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/retrieval-v1/new-results

@@ -13,3 +13,6 @@ class RetrievalSettings(BaseSettings):
     candidates: int = Field(default=100, ge=1)
     rrf_k: int = Field(default=60, ge=1)
     default_count: int = Field(default=10, ge=1, le=100)
+    # Số nơi ứng viên giữ lại làm bằng chứng; ảnh chỉ lấy từ nơi đứng đầu.
+    bridge_hypotheses: int = Field(default=3, ge=1, le=10)
+    bridge_images: int = Field(default=3, ge=1, le=10)

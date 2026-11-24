@@ -277,7 +277,7 @@ Model và processor phải khớp image index.
   tường minh; không bù bằng ảnh của target khác. Chưa kiểm chứng điều kiện thị giác.
 - Phạm vi ảnh lấy qua DEPICTS trong Neo4j và lọc cùng Qdrant trước top-K.
 - Dependency có điều kiện graph được thực thi trước khi tìm ảnh đích. Graph hỗ trợ
-  LOCATED_IN/PART_OF/BRANCH_OF; visual bridge và quan hệ ngoài schema trả
+  LOCATED_IN/PART_OF/BRANCH_OF và visual bridge (xem dưới); quan hệ ngoài schema trả
   `unsupported_graph_relation`. Multi-target giữ các mục tiêu chạy được.
 - Query được mã hóa khi chạy; không lưu hoặc đọc cache vector trên đĩa.
   Query bị cắt token hoặc vector sai shape/norm bị từ chối.
@@ -298,6 +298,43 @@ Bộ 60 câu planner entity giả không được dùng làm nhãn đánh giá r
 
 Test: `pytest -q tests/unit/test_retrieval.py` (fixture nhỏ, không mạng/model thật).
 
+
+## Visual bridge
+
+Bước `resolve_entity` có điều kiện thị giác (hoặc không có graph) được nhận diện qua ảnh:
+
+1. Graph giới hạn phạm vi. `LOCATED_IN` bắc cầu (quận → tỉnh; bộ phận theo công trình), không
+   lọc kind/category ở bước này. Entity chưa có vị trí nào được giữ vì chưa biết, không phải sai.
+   Anchor không có trong graph trả `no_graph_match`, không chuyển thành tìm toàn kho.
+2. Tìm `search_text` của bước bằng phương pháp đang chọn (hybrid: RRF 1:1) trong phạm vi đó.
+3. Xếp hạng entity theo ảnh điểm cao nhất. Hòa điểm: ưu tiên nơi graph xác nhận, rồi so các
+   ảnh sau; bằng hoàn toàn thì `ambiguous_entity`, không trả ảnh.
+4. Tìm ảnh đích chỉ trong entity đứng đầu, không tự mở rộng sang cha/con.
+
+Kết quả ghi `verification_status=visual_bridge_unverified`; `trace` giữ
+`IMAGE_SEARCH_RETRIEVAL_BRIDGE_HYPOTHESES` ứng viên (mặc định 3) kèm ảnh bằng chứng và
+`graph_confirmed`. Chưa có ngưỡng từ chối: nơi không có trong kho vẫn có thể nhận một suy đoán.
+"cùng thành phố/tỉnh…", "cách …", "chủ đầu tư" vẫn là quan hệ chưa hỗ trợ; "gần …" được coi
+là mô tả nhìn thấy.
+
+Đo 25/11/2026, hybrid, plan đã lưu, không gọi API (`var/visual-bridge-v1/`):
+
+| Nhóm | Trước R@10 | Sau R@10 |
+|---|---:|---:|
+| Multi-hop dev, plan v6 (19) | 0,000 | 0,789 |
+| Multi-hop test, plan planner v2 cũ (23) | 0,000 | 0,435 |
+| Multi-hop test, plan v6 (23) | chưa đo | **0,261** |
+| Single dev / test (29 / 18) | 0,658 / 0,792 | 0,658 / 0,792 |
+| Multi-target dev / test (18 / 12) | 0,339 / 0,506 | 0,339 / 0,506 |
+
+Riêng 25 câu có nhãn đi qua visual bridge: hybrid 25/25, keyword 22/25, vector 16/25.
+25 câu này gồm dev và plan v2, không đại diện kết quả chung.
+Test với plan v6 (route 17/23) thấp hơn dev nhiều và thấp hơn baseline tìm cả câu: 13/17 câu
+trượt dừng vì không khớp graph (tên "loại + địa danh", "Sài Gòn", tuyến metro, nơi chứa thừa),
+3 câu đúng nơi nhưng câu tìm ảnh đích mất điều kiện ảnh, 1 câu chọn sai nơi. Chưa sửa. Lọc cứng bằng graph cũ
+(không bắc cầu, có category) chỉ giữ đúng nơi 8/15 câu dev. Embedding + retrieval của câu bridge
+p50/p90 325/427 ms, câu khác 145/247 ms; chưa gồm planner.
+Giới hạn: câu hỏi sinh từ metadata nên thuận lợi cho BM25; số câu ít; test/corpus đã được xem.
 
 ## Executor — bước 5
 

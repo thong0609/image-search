@@ -46,6 +46,10 @@ Người dùng duyệt đổi schema planner (25/11/2026): model chỉ phân tí
 code suy ra dependency và route; cho gọi API để đo. Executor/graph/RRF giữ nguyên; nhãn
 q0300/q0320 chưa chốt. Chi tiết ở [planner](../design/planner.md).
 
+Người dùng duyệt thêm visual bridge vào executor (25/11/2026), thay quyết định không suy bridge
+từ ảnh: dùng Qdrant/BM25/RRF sẵn có, kết quả đánh dấu suy đoán. `LOCATED_IN` khi lọc là bắc cầu.
+Chi tiết ở [hướng dẫn baseline](../baseline/baseline-usage.md#visual-bridge).
+
 ## 2. ADR và trạng thái
 
 ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; Neo4j đã chọn cho graph nền C20; quan hệ nghiệp vụ, checkpoint VLM và cấu hình còn lại chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).

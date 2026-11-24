@@ -79,6 +79,25 @@ def test_graph_intersection_union_direction_and_two_hops(graph):
     assert store.select(missing, {})["status"] == "no_graph_match"
 
 
+def test_location_is_transitive_and_visual_scope_keeps_unknown_places(graph):
+    store, *_ = graph
+    q = query([condition(["LOCATED_IN"], "Thành phố H")])
+    # Cửa hàng A nằm trong Trung tâm M thuộc Thành phố H; tầng là bộ phận của trung tâm.
+    assert store.select(q, {})["entity_ids"] == ["a", "mall", "part"]
+    q.target_category = "tên loại khác metadata"
+    assert store.select(q, {})["status"] == "no_graph_match"
+    assert store.select(q, {}, for_visual=True)["entity_ids"] == ["a", "mall", "part"]
+    scope = store.select(q, {}, for_visual=True, allow_unknown=True)["entity_ids"]
+    assert "b" in scope
+    missing = query([condition(["LOCATED_IN"], "Không có")])
+    unknown = store.select(missing, {}, for_visual=True, allow_unknown=True)
+    assert unknown == {"status": "no_graph_match", "entity_ids": []}
+    assert store.entity_links({"one", "two"}) == {
+        "one": {"a": "Cửa hàng A", "b": "Cửa hàng B"},
+        "two": {"a": "Cửa hàng A"},
+    }
+
+
 def test_bad_import_rolls_back_and_hash_detects_tampering(graph, monkeypatch):
     store, artifact, index, payloads = graph
     before = store.export()

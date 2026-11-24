@@ -54,8 +54,9 @@ Replay hybrid không gọi API, plan v2 trong `pipeline-v1` so với plan mới 
 | Dev: multi-target (18) | 0,341 | 0,340 |
 | data20 multi-hop (19), so với prompt cũ | 0,263 | 0,000 |
 
-Multi-hop về 0 là hệ quả dự kiến: 5 câu trúng trước đây đều bị route nhầm sang single, còn
-executor chưa hỗ trợ visual bridge. Bản v5 từng làm giảm single/multi-target vì cắt tên riêng
+Multi-hop về 0 ở thời điểm đó: 5 câu trúng trước đây đều bị route nhầm sang single, còn
+executor chưa có visual bridge. Đã bổ sung sau, dev R@10 0,789:
+[visual bridge](../baseline/baseline-usage.md#visual-bridge). Bản v5 từng làm giảm single/multi-target vì cắt tên riêng
 dài; v6 sửa lỗi này, còn q0102 bị tách "Phòng vắt sữa" khỏi tên.
 
 Giới hạn: bộ cặp scope do cùng một tác giả viết, dễ hơn dataset và split test đã được xem khi
