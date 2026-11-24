@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from image_search.baseline.utils import file_hash, read_jsonl, write_json, write_jsonl
+from image_search.files import file_hash, read_jsonl, write_json, write_jsonl
 from image_search.planner.evaluate import normalize, percentile
 from image_search.planner.router import PROMPT, PROMPT_VERSION, make_client, route_query
 from image_search.planner.settings import PlannerSettings

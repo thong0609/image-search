@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("numpy")
 
-from image_search.baseline.keyword import (  # noqa: E402
+from image_search.retrieval.keyword import (  # noqa: E402
     build_documents,
     build_keyword_index,
     fuse_rankings,

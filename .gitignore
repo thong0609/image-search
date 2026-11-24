@@ -3,13 +3,16 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
-.env
-var/
-dist/
 *.egg-info/
+dist/
+.env
+.vscode/
 
+# Dữ liệu và artifact local
 data/
+var/
 
+# Frontend
 node_modules/
 .next/
 *.tsbuildinfo

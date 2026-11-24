@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from image_search.api.v1.playground import get_playground
 from image_search.config import Settings
 from image_search.main import create_app
-from image_search.playground.service import PlaygroundBusy, PlaygroundService
+from image_search.playground import PlaygroundBusy, PlaygroundService
 
 
 @pytest.fixture

@@ -7,8 +7,8 @@ import pytest
 
 from image_search.adapters.neo4j.client import create_graph_driver
 from image_search.adapters.neo4j.store import GraphStore
-from image_search.modules.graph.query import GraphQuery
-from image_search.modules.graph.settings import GraphSettings
+from image_search.graph.query import GraphQuery
+from image_search.graph.settings import GraphSettings
 
 pytestmark = [
     pytest.mark.integration,

@@ -10,9 +10,9 @@ from pathlib import Path
 import numpy as np
 from neo4j.exceptions import DriverError, Neo4jError
 
-from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_json, write_jsonl
 from image_search.embedding.settings import EmbeddingSettings
-from image_search.embedding.siglip2 import Siglip2Embedding, plan_steps
+from image_search.embedding.siglip2 import Siglip2Embedding
+from image_search.files import file_hash, read_json, read_jsonl, write_json, write_jsonl
 from image_search.planner.schemas import QueryPlan
 from image_search.retrieval.executor import direct_steps
 from image_search.retrieval.listing import search_list
@@ -36,10 +36,8 @@ def write_gallery(path, predictions, corpus):
         content = f"<h2>{html.escape(row['query_id'])} · {row['status']}</h2>"
         content += f"<p>{html.escape(row.get('text', ''))}</p>"
         for step in row.get("trace", []):
-            if step.get("status") == "unsupported_graph_relation":
-                content += "<p>Quan hệ graph chưa được hỗ trợ; không chạy bridge cũ.</p>"
-                continue
-            content += "<p>Graph: " + html.escape(str(step.get("entity_ids", []))) + "</p>"
+            names = [h["name"] for h in step.get("hypotheses", [])] or step.get("entity_ids", [])
+            content += f"<p>{step['status']}: " + html.escape(str(names)) + "</p>"
         for group in row.get("groups", []):
             content += (
                 f"<h3>{html.escape(group['target_id'])} · "
@@ -48,28 +46,7 @@ def write_gallery(path, predictions, corpus):
             content += "<p>Entity scope: " + html.escape(str(group["entity_scope"])) + "</p><div>"
             content += "".join(card(r["image_id"], str(r["score"])) for r in group["results"])
             content += "</div>"
-            content += "<p>Kiểm tra metadata: " + html.escape(
-                group.get("verification_status", "unverified")
-            )
-            content += " · Số lượng: " + html.escape(group.get("count_status", "unknown")) + "</p>"
-            if group.get("status") == "ambiguous_entity":
-                content += "<p>Chưa chọn entity; không trộn các nhánh thành câu trả lời.</p>"
-            for hypothesis in group.get("hypotheses", []):
-                content += (
-                    "<details><summary>Giả thuyết entity: "
-                    + html.escape(str(hypothesis["entity_id"]))
-                    + " · "
-                    + hypothesis["count_status"]
-                    + "</summary><div>"
-                )
-                content += "".join(
-                    card(r["image_id"], str(r["score"])) for r in hypothesis["results"]
-                )
-                content += (
-                    "</div><pre>"
-                    + html.escape(str(hypothesis["bridge_paths"]))
-                    + "</pre></details>"
-                )
+            content += "<p>" + html.escape(group.get("verification_status", "")) + "</p>"
         sections.append("<section>" + content + "</section>")
     style = (
         '<meta charset="utf-8"><style>body{font:15px system-ui;margin:20px}'
@@ -81,6 +58,21 @@ def write_gallery(path, predictions, corpus):
         style + "<h1>Retrieval theo planner</h1><p>Ứng viên chưa được rerank hoặc "
         "xác minh thị giác. Điểm không phải xác suất.</p>" + "".join(sections)
     )
+
+
+def validate_plans(rows):
+    if not rows:
+        raise ValueError("File kế hoạch rỗng")
+    seen = set()
+    for row in rows:
+        qid = row.get("query_id")
+        if not isinstance(qid, str) or not qid.strip() or qid in seen:
+            raise ValueError("Query ID rỗng/trùng")
+        seen.add(qid)
+        if row.get("status") not in ("ok", "error"):
+            raise ValueError(f"{qid}: status cần là ok/error")
+        if row["status"] == "ok":
+            QueryPlan.model_validate(row["plan"])
 
 
 def main():
@@ -105,16 +97,12 @@ def main():
         if args.output_dir.exists():
             raise ValueError("Output đã tồn tại; dùng thư mục phiên bản mới")
         rows = read_jsonl(args.plans)
-        if not rows:
-            raise ValueError("File kế hoạch rỗng")
-        active_steps, _ = plan_steps(rows)  # Validate toàn bộ input trước khi tải index/model.
+        validate_plans(rows)  # Kiểm tra toàn bộ input trước khi tải index/model.
         aliases = read_json(args.aliases) if args.aliases else None
         started = time.perf_counter()
         engine, corpus, index = load_engine(embedding_settings, settings, aliases)
         encoder = None
-        if args.method != "keyword" and (
-            not args.strict or any(s["action"] == "retrieve_images" for s in active_steps)
-        ):
+        if args.method != "keyword":
             encoder = Siglip2Embedding(embedding_settings)
         startup_seconds = time.perf_counter() - started
         methods = ("vector", "keyword", "hybrid") if args.method == "all" else (args.method,)

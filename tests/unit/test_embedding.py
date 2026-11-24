@@ -1,6 +1,5 @@
 # ruff: noqa: E402
 # The embedding stack is an optional baseline extra; tests never load model weights.
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,12 +7,9 @@ import pytest
 np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
-from image_search.baseline.utils import read_jsonl
-from image_search.baseline.vectors import encode_text
+from image_search.embedding.encoder import encode_text, normalize
 from image_search.embedding.settings import EmbeddingSettings
-from image_search.embedding.siglip2 import Siglip2Embedding, plan_steps
-
-CASES = Path(__file__).parents[1] / "fixtures/planner-cases.jsonl"
+from image_search.embedding.siglip2 import Siglip2Embedding
 
 
 class Processor:
@@ -81,27 +77,7 @@ def test_processor_mismatch_rejects_model(monkeypatch, encoder):
         Siglip2Embedding(EmbeddingSettings(_env_file=None))
 
 
-def test_plan_embedding_preserves_dependency_rows_and_skips_clarification():
-    cases = read_jsonl(CASES)
-    hop = next(r for r in cases if r["expected"]["query_type"] == "multi-hop")
-    unclear = next(r for r in cases if r["expected"]["needs_clarification"])
-    rows, skipped = plan_steps(
-        [
-            {"query_id": hop["query_id"], "status": "ok", "plan": hop["expected"]},
-            {"query_id": unclear["query_id"], "status": "ok", "plan": unclear["expected"]},
-            {"query_id": "failed", "status": "error", "plan": None},
-        ]
-    )
-    assert [r["row_index"] for r in rows] == [0, 1]
-    assert rows[0]["action"] == "resolve_entity"
-    assert rows[1]["depends_on"] == [rows[0]["step_id"]]
-    assert rows[0]["target_id"] == rows[1]["target_id"]
-    assert skipped == [
-        {"query_id": unclear["query_id"], "reason": "needs_clarification"},
-        {"query_id": "failed", "reason": "planner_error"},
-    ]
-
-
-def test_duplicate_queries_are_rejected_before_row_mapping():
-    with pytest.raises(ValueError, match="trùng"):
-        plan_steps([{"query_id": "q1", "status": "error"}] * 2)
+@pytest.mark.parametrize("vectors", [[[0, 0]], [[float("nan"), 1]]])
+def test_invalid_vectors_are_rejected(vectors):
+    with pytest.raises(ValueError):
+        normalize(vectors)

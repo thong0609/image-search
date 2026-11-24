@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from image_search.modules.graph.query import GraphCondition, GraphQuery
+from image_search.graph.query import GraphCondition, GraphQuery
 from image_search.planner.schemas import QueryPlan, Step
 
 IMAGE = "image"

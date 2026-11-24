@@ -5,7 +5,7 @@ from pathlib import Path
 
 from image_search.baseline.download import reusable
 from image_search.baseline.records import read_approved_records
-from image_search.baseline.utils import (
+from image_search.files import (
     file_hash,
     read_json,
     read_jsonl,

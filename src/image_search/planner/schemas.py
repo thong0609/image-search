@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from image_search.modules.graph.query import GraphQuery
+from image_search.graph.query import GraphQuery
 
 
 class Step(BaseModel):

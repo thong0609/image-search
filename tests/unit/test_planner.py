@@ -11,7 +11,7 @@ from pydantic import ValidationError
 pytest.importorskip("openai")
 from openai import OpenAI
 
-from image_search.baseline.utils import read_jsonl
+from image_search.files import read_jsonl
 from image_search.planner.cli import main, validate_inputs
 from image_search.planner.evaluate import evaluate_cases, score_case
 from image_search.planner.router import make_client, route_query

@@ -23,8 +23,9 @@ from transformers import (  # noqa: E402
 from image_search.baseline.benchmark import draft_benchmark, freeze_benchmark  # noqa: E402
 from image_search.baseline.evaluate import evaluate_predictions  # noqa: E402
 from image_search.baseline.records import REQUIRED_COLUMNS, read_approved_records  # noqa: E402
-from image_search.baseline.utils import read_json, read_jsonl, write_jsonl  # noqa: E402
-from image_search.baseline.vectors import build_index, search_index  # noqa: E402
+from image_search.baseline.search import search_index  # noqa: E402
+from image_search.embedding.index import build_index  # noqa: E402
+from image_search.files import read_json, read_jsonl, write_jsonl  # noqa: E402
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:Payload indexes:UserWarning"),
@@ -114,9 +115,7 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
     from qdrant_client import QdrantClient
 
     client = QdrantClient(":memory:")
-    monkeypatch.setattr(
-        "image_search.adapters.qdrant.client.create_qdrant_client", lambda _: client
-    )
+    monkeypatch.setattr("image_search.embedding.index.create_qdrant_client", lambda _: client)
     monkeypatch.setattr(client, "close", lambda: None)
     collection = "fixture-images"
     build_index(manifest, collection, str(model_path), "0" * 40, batch_size=2, threads=1)
@@ -143,7 +142,7 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
     for method in ["hybrid", "keyword"]:
         if method == "keyword":
             monkeypatch.setattr(
-                "image_search.baseline.vectors.load_encoder",
+                "image_search.baseline.search.load_encoder",
                 lambda *args: pytest.fail("Keyword không được nạp model"),
             )
         output = search_index(

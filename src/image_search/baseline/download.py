@@ -14,7 +14,7 @@ import httpx
 from PIL import Image
 
 from image_search.baseline.settings import get_baseline_settings
-from image_search.baseline.utils import file_hash, read_jsonl, write_json, write_jsonl
+from image_search.files import file_hash, read_jsonl, write_json, write_jsonl
 
 
 def public_address(url):

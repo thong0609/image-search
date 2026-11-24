@@ -6,7 +6,7 @@ import json
 from qdrant_client import models
 
 from image_search.adapters.qdrant.vectors import point_id, save_metadata
-from image_search.baseline.keyword import tokenize
+from image_search.retrieval.keyword import tokenize
 
 
 def name_key(text):

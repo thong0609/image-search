@@ -5,7 +5,7 @@ import time
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
-from image_search.modules.graph.query import strict_schema
+from image_search.graph.query import strict_schema
 from image_search.planner.draft import QueryDraft, compile_plan
 from image_search.planner.settings import PlannerSettings
 

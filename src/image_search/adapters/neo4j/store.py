@@ -5,8 +5,8 @@ from collections import Counter
 from neo4j import Query
 
 from image_search.adapters.qdrant.metadata import name_key
-from image_search.modules.graph.build import validate_graph
-from image_search.modules.graph.extraction import digest
+from image_search.graph.build import validate_graph
+from image_search.graph.extraction import digest
 
 RELATIONS = ("LOCATED_IN", "PART_OF", "BRANCH_OF")
 

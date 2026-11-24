@@ -7,42 +7,8 @@ import numpy as np
 import torch
 from PIL import Image
 
-from image_search.baseline.vectors import load_encoder, load_index, normalize, processor_hash
-from image_search.planner.schemas import QueryPlan
-
-
-def plan_steps(predictions):
-    items, skipped, seen = [], [], set()
-    for row in predictions:
-        qid = row.get("query_id")
-        if not isinstance(qid, str) or not qid.strip() or qid in seen:
-            raise ValueError("Query ID rỗng/trùng")
-        seen.add(qid)
-        if row.get("status") == "error":
-            skipped.append({"query_id": qid, "reason": "planner_error"})
-            continue
-        if row.get("status") != "ok":
-            raise ValueError(f"{qid}: status cần là ok/error")
-        plan = QueryPlan.model_validate(row["plan"])
-        if plan.needs_clarification:
-            skipped.append({"query_id": qid, "reason": "needs_clarification"})
-            continue
-        for step in plan.steps:
-            items.append(
-                {
-                    "row_index": len(items),
-                    "query_id": qid,
-                    "step_id": step.id,
-                    "target_id": step.target_id,
-                    "action": step.action,
-                    "search_text": step.search_text,
-                    "depends_on": step.depends_on,
-                    "entity_mention": step.entity_mention,
-                    "conditions": step.conditions,
-                    "count": step.count,
-                }
-            )
-    return items, skipped
+from image_search.embedding.encoder import load_encoder, normalize, processor_hash
+from image_search.embedding.index import load_index
 
 
 class Siglip2Embedding:

@@ -24,39 +24,15 @@ Cập nhật sau baseline v2: dùng dataset CSV hiện có, đã chốt baseline
 | C16 | Một người phát triển, backend FastAPI và PostgreSQL | Người dùng ngày 06/11/2026 |
 | C17 | Triển khai local trước; RAM hệ thống 16 GB, Intel Raptor Lake-P dùng RAM chia sẻ, không VRAM chuyên dụng cố định; cho phép API VLM ngoài | Người dùng và làm rõ phần cứng ngày 06/11/2026 |
 | C18 | Query một mục tiêu, nhiều mục tiêu như “ảnh Hạ Long, ảnh Cát Bà”, và multi-hop có suy luận quan hệ | Người dùng và làm rõ multi-target ngày 06/11/2026 |
-| C20 | Chọn Neo4j; schema nguồn 5 loại node đã triển khai nhưng được thay thế về hướng thiết kế bởi C21, chưa migration | Triển khai trước khi người dùng điều chỉnh hướng |
-| C21 | Tin metadata `approve=yes`, không thêm xác minh nguồn; bỏ SourceRecord/SourcePage/SourceLabel, tập trung quan hệ entity–entity. Chất lượng trước, mở rộng nguồn sau | Người dùng ngày 24/11/2026; đã cho triển khai plan; migration dữ liệu thật chờ OpenAI có credit |
+| C20 | Chọn Neo4j; schema nguồn 5 loại node đã triển khai nhưng đã thay bằng schema quan hệ theo C21 | Triển khai trước khi người dùng điều chỉnh hướng |
+| C21 | Tin metadata `approve=yes`, không thêm xác minh nguồn; bỏ SourceRecord/SourcePage/SourceLabel, tập trung quan hệ entity–entity. Chất lượng trước, mở rộng nguồn sau | Người dùng ngày 24/11/2026; đã triển khai |
 | C19 | Frontend đơn giản theo phong cách Google Images; Next.js App Router/TypeScript, Tailwind, shadcn/ui, TanStack Query và fetch; code trong frontend/, xây search từ phase 3 | Người dùng yêu cầu đưa đề xuất FE vào kế hoạch |
-
-Theo chỉ đạo mới nhất, chỉ dùng OpenAI trực tiếp với OPENAI_API_KEY;
-model GPT-5 mini (`gpt-5-mini-2025-08-07`). Đã bỏ provider trung gian và cấu hình/key liên quan.
-
-Cập nhật theo yêu cầu tiết kiệm chi phí: Codex trực tiếp lập extraction cho graph hiện tại,
-không gọi API cho phần offline. Có `prepare`/`build` đọc file đã điền,
-kiểm tra schema/hash và import Neo4j. Planner online dùng OpenAI/GPT-5 mini.
-Phạm vi rà soát: tên/nhãn 185 nhóm và câu metadata thể hiện quan hệ; chưa annotation
-mọi caption. Graph thật đã migration; chưa benchmark planner v3 mới.
-
-Người dùng yêu cầu FE đơn giản để thử chất lượng: thêm playground local xem planner,
-steps/dependency, ảnh và độ trễ trước bước hoàn thiện website. Tái sử dụng Next.js/FastAPI
-hiện có, OpenAI key chỉ ở backend; giữ graph, prompt hiện hành và RRF 1:1. Không tự áp dụng
-prompt ứng viên hoặc thay planner; FE production/auth vẫn để sau.
-
-Người dùng duyệt đổi schema planner (25/11/2026): model chỉ phân tích owner của điều kiện,
-code suy ra dependency và route; cho gọi API để đo. Executor/graph/RRF giữ nguyên; nhãn
-q0300/q0320 chưa chốt. Chi tiết ở [planner](../design/planner.md).
-
-Người dùng duyệt thêm visual bridge vào executor (25/11/2026), thay quyết định không suy bridge
-từ ảnh: dùng Qdrant/BM25/RRF sẵn có, kết quả đánh dấu suy đoán. `LOCATED_IN` khi lọc là bắc cầu.
-Chi tiết ở [hướng dẫn baseline](../baseline/baseline-usage.md#visual-bridge).
-
-Người dùng duyệt nới quy tắc tên không khớp (25/11/2026): khi câu có mô tả nhận diện, tên không
-có trong graph thành mô tả mềm của visual bridge và được ghi trong `unmatched_names`; câu chỉ nêu
-tên vẫn trả rỗng. Nơi graph xác nhận được ưu tiên khi điểm kém không quá 10%.
-
-Người dùng chốt hướng kiểu Google Images (25/11/2026): luôn trả danh sách ảnh, không từ chối;
-bỏ quy tắc "không khớp thì trả rỗng, không tìm toàn kho"; multi-target tạm giữ nhóm riêng; số ảnh
-nêu trong câu không cắt danh sách.
+| C22 | Planner chỉ gọi OpenAI trực tiếp (`gpt-5-mini-2025-08-07`, `OPENAI_API_KEY`) | Người dùng |
+| C23 | Graph hiện tại trích xuất trực tiếp từ metadata, không gọi API trích xuất nếu chưa có yêu cầu mới | Người dùng, để tiết kiệm chi phí |
+| C24 | Có playground local để thử planner/retrieval trước website; key chỉ ở backend | Người dùng ngày 24/11/2026 |
+| C25 | Planner chỉ phân tích điều kiện thuộc ảnh hay nơi chứa; code suy ra dependency và route | Người dùng ngày 25/11/2026 |
+| C26 | Thêm visual bridge, thay quyết định không suy nơi chứa từ ảnh; `LOCATED_IN` bắc cầu; nơi graph xác nhận được ưu tiên khi điểm kém không quá 10% | Người dùng ngày 25/11/2026 |
+| C27 | Kiểu Google Images: luôn trả danh sách ảnh, không từ chối; không khớp thì tìm cả câu; multi-target tạm giữ nhóm; số ảnh trong câu không cắt danh sách | Người dùng ngày 25/11/2026 |
 
 ## 2. ADR và trạng thái
 
@@ -137,4 +113,4 @@ Các câu hỏi còn mở trên là đầu vào thiết kế tiếp theo; không
 
 Lịch sử C13/ADR15: thiết kế tách source/family/generation/projection/import/item/delivery/search-item thành bảng riêng được superseded bởi schema 9 bảng. Không có migration thực tế. Family và projection vẫn là khái niệm nghiệp vụ, được lưu qua root row/index_state; jobs tạo cùng transaction catalog giữ transactional outbox. ADR10 đổi từ reindex có catch-up sang maintenance runbook; auth vẫn giữ rotation/reuse detection và access revocation sau commit.
 
-Baseline v2 đã hoàn thành code và đánh giá sơ bộ. Không áp dụng kế hoạch địa danh/Commons/Wikidata cũ; dữ liệu hiện tại và giới hạn nhãn được ghi trong [tài liệu benchmark](../baseline/benchmark-design.md).
+Baseline v2 đã hoàn thành code và đánh giá sơ bộ. Không áp dụng kế hoạch địa danh/Commons/Wikidata cũ; dữ liệu hiện tại và giới hạn nhãn được ghi trong [tài liệu benchmark](../evaluation/benchmarks.md).

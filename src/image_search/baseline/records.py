@@ -2,7 +2,7 @@
 
 import csv
 
-from image_search.baseline.utils import file_hash, write_json, write_jsonl
+from image_search.files import file_hash, write_json, write_jsonl
 
 REQUIRED_COLUMNS = [
     "entity_id",

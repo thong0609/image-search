@@ -1,4 +1,4 @@
-"""Tra entity từ metadata nguồn, không đọc câu hỏi/đáp án benchmark."""
+"""Record theo ảnh/entity từ metadata nguồn; không đọc câu hỏi/đáp án benchmark."""
 
 from collections import defaultdict
 
@@ -6,60 +6,23 @@ from image_search.adapters.qdrant.metadata import name_key
 
 
 class Catalog:
-    def __init__(self, records, image_ids, aliases=None, vector_store=None, graph_store=None):
-        self.graph_store = graph_store
-        self.vector_store = vector_store
+    def __init__(self, records, image_ids, aliases=None):
         self.aliases = aliases or {}
         self.image_entities = defaultdict(set)
-        self.entity_images = defaultdict(set)
-        self.names = defaultdict(set)
         self.records = defaultdict(list)
-        self.uncertain = set()
-        valid = set(image_ids)
+        valid, known = set(image_ids), set()
         for row in records:
             iid = row.get("image_id")
             if row.get("download_status") != "success" or iid not in valid:
                 continue
-            eid = row["entity_id"]
-            self.image_entities[iid].add(eid)
-            self.entity_images[eid].add(iid)
-            self.names[name_key(row["entity_name"])].add(eid)
+            known.add(row["entity_id"])
+            self.image_entities[iid].add(row["entity_id"])
             self.records[iid].append(row)
-            if any(
-                term in row.get("mo_ta", "").casefold()
-                for term in ("có thể là", "có lẽ", "chưa xác định", "không rõ")
-            ):
-                self.uncertain.add(iid)
-        for alias, eids in (aliases or {}).items():
+        for alias, entity_ids in self.aliases.items():
             if (
                 not name_key(alias)
-                or not isinstance(eids, list)
-                or not eids
-                or not all(eid in self.entity_images for eid in eids)
+                or not isinstance(entity_ids, list)
+                or not entity_ids
+                or not set(entity_ids) <= known
             ):
                 raise ValueError("Alias cần tên và danh sách entity ID có trong catalog")
-            self.names[name_key(alias)].update(eids)
-
-    def resolve(self, mention):
-        key = name_key(mention)
-        if self.graph_store is not None:
-            entity_ids = self.graph_store.resolve(key)
-        elif self.vector_store is None:
-            entity_ids = set(self.names.get(key, set()))
-        else:
-            matches = self.vector_store.filtered_payloads(name=key, fields=["records"])
-            entity_ids = {
-                r["entity_id"]
-                for payload in matches
-                for r in payload["records"]
-                if name_key(r["entity_name"]) == key
-            }
-        for alias, ids in self.aliases.items():
-            if name_key(alias) == key:
-                entity_ids.update(ids)
-        return entity_ids
-
-    def images_for(self, entity_ids):
-        return (
-            set().union(*(self.entity_images[eid] for eid in entity_ids)) if entity_ids else set()
-        )

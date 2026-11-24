@@ -6,8 +6,9 @@ from image_search.baseline.benchmark import draft_benchmark, freeze_benchmark
 from image_search.baseline.download import download_records
 from image_search.baseline.evaluate import evaluate_predictions
 from image_search.baseline.records import prepare_records
+from image_search.baseline.search import search_index
 from image_search.baseline.settings import get_baseline_settings
-from image_search.baseline.vectors import build_index, search_index
+from image_search.embedding.index import build_index
 
 
 def add_index_arguments(parser):

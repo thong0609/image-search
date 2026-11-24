@@ -3,7 +3,7 @@
 import pytest
 
 from image_search.adapters.qdrant.metadata import name_key
-from image_search.modules.graph.extraction import digest
+from image_search.graph.extraction import digest
 
 
 @pytest.fixture

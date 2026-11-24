@@ -1,5 +1,8 @@
 from neo4j import GraphDatabase
 
+from image_search.adapters.neo4j.store import GraphStore
+from image_search.graph.settings import GraphSettings
+
 
 def create_graph_driver(settings):
     driver = GraphDatabase.driver(
@@ -11,6 +14,18 @@ def create_graph_driver(settings):
     try:
         driver.verify_connectivity()
         return driver
+    except Exception:
+        driver.close()
+        raise
+
+
+def load_graph(index, payloads):
+    settings = GraphSettings()
+    driver = create_graph_driver(settings)
+    graph = GraphStore(driver, settings, index["search_metadata_sha256"])
+    try:
+        graph.validate(index, payloads)
+        return graph
     except Exception:
         driver.close()
         raise
