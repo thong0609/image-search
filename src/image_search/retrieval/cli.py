@@ -45,6 +45,28 @@ def write_gallery(path, predictions, corpus):
             content += "<p>Entity scope: " + html.escape(str(group["entity_scope"])) + "</p><div>"
             content += "".join(card(r["image_id"], str(r["score"])) for r in group["results"])
             content += "</div>"
+            content += "<p>Kiểm tra metadata: " + html.escape(
+                group.get("verification_status", "unverified")
+            )
+            content += " · Số lượng: " + html.escape(group.get("count_status", "unknown")) + "</p>"
+            if group.get("status") == "ambiguous_entity":
+                content += "<p>Chưa chọn entity; không trộn các nhánh thành câu trả lời.</p>"
+            for hypothesis in group.get("hypotheses", []):
+                content += (
+                    "<details><summary>Giả thuyết entity: "
+                    + html.escape(str(hypothesis["entity_id"]))
+                    + " · "
+                    + hypothesis["count_status"]
+                    + "</summary><div>"
+                )
+                content += "".join(
+                    card(r["image_id"], str(r["score"])) for r in hypothesis["results"]
+                )
+                content += (
+                    "</div><pre>"
+                    + html.escape(str(hypothesis["bridge_paths"]))
+                    + "</pre></details>"
+                )
         sections.append("<section>" + content + "</section>")
     style = (
         '<meta charset="utf-8"><style>body{font:15px system-ui;margin:20px}'
@@ -167,7 +189,9 @@ def main():
             ordered = [predictions[r["query_id"]] for r in rows]
             write_jsonl(output / "predictions.jsonl", ordered)
             write_jsonl(output / "timings.jsonl", timings)
-            measured = [t for t in timings if t["status"] == "candidate_results"]
+            measured = [
+                t for t in timings if t["status"] not in ("needs_clarification", "planner_error")
+            ]
             write_json(
                 output / "report.json",
                 {
@@ -177,6 +201,9 @@ def main():
                     "method": method,
                     "group_statuses": dict(
                         Counter(g["status"] for p in ordered for g in p["groups"])
+                    ),
+                    "queries_with_results": sum(
+                        any(g["results"] for g in p["groups"]) for p in ordered
                     ),
                     "queries_with_candidates": sum(
                         any(g["candidates"] for g in p["groups"]) for p in ordered

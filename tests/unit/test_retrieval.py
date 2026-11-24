@@ -210,3 +210,119 @@ def test_explicit_count_reports_insufficient_candidates(engine):
     result = engine.execute(make_plan([step]), "keyword")
     assert result["groups"][0]["status"] == "insufficient_candidates"
     assert len(result["groups"][0]["results"]) < 100
+
+
+def test_ambiguous_entities_do_not_pool_counts_or_publish_mixed_results(engine):
+    bridge = make_step(action="resolve_entity")
+    bridge["conditions"] = ["cổng đỏ"]
+    end = make_step("s2", deps=["s1"])
+    end.update(count=2, conditions=["bên trong"])
+    result = engine.execute(
+        make_plan([bridge, end], "multi-hop"),
+        "vector",
+        {"s1": np.array([1, 0]), "s2": np.array([0, 1])},
+    )
+    group = result["groups"][0]
+    assert group["status"] == "ambiguous_entity"
+    assert group["count_status"] == "unresolved_entity"
+    assert group["results"] == []
+    assert {h["entity_id"] for h in group["hypotheses"]} == {"A", "B"}
+    assert all(h["count_status"] == "insufficient_candidates" for h in group["hypotheses"])
+    assert sum(len(h["results"]) for h in group["hypotheses"]) == 2
+
+
+def test_evidence_keeps_record_provenance_without_claiming_visual_verification(engine):
+    from image_search.retrieval.evidence import inspect_evidence
+
+    evidence = inspect_evidence(engine.catalog, "ag", "A", ["cổng đỏ"])
+    assert evidence["identity_status"] == "supported_by_metadata"
+    assert evidence["conditions_status"] == "supported_by_metadata"
+    assert evidence["condition_checks"][0]["sources"][0]["record_id"] == "0"
+    assert evidence["visual_verification"] == "not_performed"
+    assert evidence["identity_sources"][0]["entity_id"] == "A"
+
+
+def test_absence_of_caption_words_never_proves_negation(engine):
+    from image_search.retrieval.evidence import inspect_evidence
+
+    evidence = inspect_evidence(engine.catalog, "ag", "A", ["không có người"])
+    assert evidence["conditions_status"] == "unverified"
+    assert evidence["condition_checks"][0]["sources"] == []
+
+
+def test_unknown_target_condition_is_not_reported_as_verified_count(engine):
+    step = make_step(mention="Cửa hàng A")
+    step.update(count=1, conditions=["bàn thờ"])
+    group = engine.execute(make_plan([step]), "keyword")["groups"][0]
+    assert group["results"]
+    assert group["verification_status"] == "unverified"
+    assert group["count_status"] == "unverified"
+    assert group["hypotheses"][0]["metadata_supported_count"] == 0
+
+
+def test_conflicting_identity_is_quarantined_in_scoped_target_search(engine):
+    step = make_step(mention="Cửa hàng A")
+    step["search_text"] = "ảnh"
+    group = engine.execute(make_plan([step]), "keyword")["groups"][0]
+    assert group["results"] == []
+    rejected = group["hypotheses"][0]["rejected_candidates"]
+    assert rejected[0]["image_id"] == "00-conflict"
+    assert rejected[0]["evidence"]["identity_status"] == "conflicting"
+
+
+def test_partial_multi_target_does_not_claim_all_targets_resolved(engine):
+    a = make_step(mention="Cửa hàng A")
+    b = make_step("s2", "t2", mention="Không có")
+    result = engine.execute(make_plan([a, b], "multi-target"), "keyword")
+    assert result["status"] == "partial_results"
+    assert result["groups"][0]["results"]
+    assert not result["groups"][1]["results"]
+
+
+def test_join_paths_requires_same_entity_and_consistent_shared_ancestor():
+    from image_search.retrieval.executor import join_paths
+
+    a = {"A": [[{"step_id": "root", "image_id": "ag"}]]}
+    b = {"B": [[{"step_id": "other", "image_id": "bg"}]]}
+    assert join_paths([a, b], 2) == ({}, False)
+    conflict = {"A": [[{"step_id": "root", "image_id": "another_image"}]]}
+    assert join_paths([a, conflict], 2) == ({}, False)
+    consistent = {
+        "A": [[{"step_id": "root", "image_id": "ag"}, {"step_id": "second", "image_id": "ai"}]]
+    }
+    joined, truncated = join_paths([a, consistent], 2)
+    assert not truncated
+    assert len(joined["A"][0]) == 2
+
+
+def test_join_paths_has_bounded_work_and_reports_truncation():
+    from image_search.retrieval.executor import join_paths
+
+    a = {"A": [[{"step_id": "root", "image_id": f"a{i}"}] for i in range(5)]}
+    b = {"A": [[{"step_id": "root", "image_id": f"b{i}"}] for i in range(5)]}
+    joined, truncated = join_paths([a, b], 2, combination_limit=3)
+    assert truncated and joined == {}
+
+
+def test_unique_hop_preserves_both_bridge_and_target_evidence(engine):
+    bridge = make_step(action="resolve_entity", mention="Cửa hàng A")
+    bridge["conditions"] = ["cổng đỏ"]
+    end = make_step("s2", deps=["s1"])
+    end.update(count=1, conditions=["bên trong"])
+    result = engine.execute(make_plan([bridge, end], "multi-hop"), "keyword")
+    group = result["groups"][0]
+    assert group["count_status"] == "supported_by_metadata"
+    assert group["verification_status"] == "supported_by_metadata"
+    assert group["results"][0]["image_id"] == "ai"
+    path = group["results"][0]["evidence_paths"][0]
+    assert path["bridge_steps"][0]["image_id"] == "ag"
+    assert path["target_evidence"]["image_id"] == "ai"
+    assert path["target_evidence"]["visual_verification"] == "not_performed"
+
+
+def test_condition_evidence_keeps_vietnamese_diacritics(engine):
+    from image_search.retrieval.evidence import inspect_evidence
+
+    engine.catalog.records["ag"][0]["mo_ta"] = "Cổng có cây đa."
+    evidence = inspect_evidence(engine.catalog, "ag", "A", ["đá"])
+    assert evidence["conditions_status"] == "unverified"

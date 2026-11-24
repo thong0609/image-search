@@ -51,7 +51,9 @@ Chi tiết và phép đo: [embedding cho retrieval](docs/baseline/baseline-usage
 ## Retrieval theo planner
 
 Tìm vector/BM25/RRF riêng theo từng mục tiêu. Nhận kế hoạch đã lưu, không gọi OpenAI.
-Giữ shortlist, nhóm kết quả, số ảnh yêu cầu và bridge/entity ứng viên có nguồn.
+Giữ shortlist, nhóm kết quả, số ảnh yêu cầu và đường bằng chứng bridge/entity.
+Executor tách các entity mơ hồ thành giả thuyết riêng, không cộng ảnh giữa các nhánh;
+kiểm tra điều kiện trên metadata và ghi rõ phần chưa xác minh thị giác.
 
 ```bash
 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --embeddings var/retrieval-v1/embeddings --method all --output-dir var/retrieval-v1/new-results

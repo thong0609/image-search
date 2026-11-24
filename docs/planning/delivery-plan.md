@@ -9,7 +9,7 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 2 | Planner: phân loại câu, tách mục tiêu và dependency | Đã thử OpenAI prompt v2; tạm giữ nguyên |
 | 3 | Embedding: chọn/thử model ảnh–văn bản, mã hóa ảnh và lập index | Đã kiểm tra/tái sử dụng index SigLIP2; tạo vector theo từng bước planner và đo độ trễ |
 | 4 | Retrieval: mã hóa query của từng bước, tìm vector/keyword và kết hợp hybrid | Đã có vector/BM25/RRF theo mục tiêu, đã chạy thử query dev thật |
-| 5 | Thực thi kế hoạch: ghép retrieval theo từng mục tiêu, entity và bridge cho multi-hop | Đã có executor và bridge/entity ứng viên; chưa xác minh facts/điều kiện |
+| 5 | Thực thi kế hoạch: ghép retrieval theo từng mục tiêu, entity và bridge cho multi-hop | Đã có đường bằng chứng theo entity, tách giả thuyết và kiểm tra metadata; chưa xác minh thị giác |
 | 6 | Reranking: sắp xếp lại shortlist bằng model phù hợp | Chưa triển khai |
 | 7 | Đánh giá toàn pipeline, chọn cấu hình và tối ưu chất lượng/độ trễ | Sau khi có luồng hoàn chỉnh |
 | 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Sau cùng |

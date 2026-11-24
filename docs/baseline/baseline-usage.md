@@ -307,8 +307,8 @@ Không ghi đè output đã có. Dùng settings `IMAGE_SEARCH_EMBEDDING_` để 
 - Mỗi mục tiêu có candidates (mặc định top-100) và results (count yêu cầu hoặc giới hạn
   hiển thị 10 nếu count=null). Thiếu ảnh chỉ báo insufficient_candidates nếu có count
   tường minh; không bù bằng ảnh của target khác. Chưa kiểm chứng điều kiện thị giác.
-- Bridge tìm top-20 ảnh, giữ tối đa 3 entity giả thuyết, một ảnh đại diện tốt nhất mỗi
-  entity. Không coi top-1 là đúng. Ảnh nhiều entity hoặc nguồn ghi chưa chắc chắn bị
+- Bridge tìm top-20 ảnh, giữ tối đa 3 entity giả thuyết, tối đa hai đường bằng chứng mỗi
+  entity theo cấu hình executor. Không coi top-1 là đúng. Ảnh nhiều entity hoặc nguồn ghi chưa chắc chắn bị
   bỏ khỏi bước nhận diện. Đây là chính sách bảo thủ, có thể bỏ cả alias đúng cùng nơi.
 - Bước phụ thuộc tìm trong các entity giả thuyết của bước trước, loại ảnh bridge đã
   dùng. Nhiều dependency lấy giao entity. Kết quả giữ bridge image ID/record ID và trace.
@@ -333,3 +333,44 @@ Artifact: `var/retrieval-v1/selection.json`, `planner/`, `embeddings/`,
 Bộ 60 câu planner entity giả không được dùng làm nhãn đánh giá retrieval ảnh thật.
 
 Test: `pytest -q tests/unit/test_retrieval.py` (fixture nhỏ, không mạng/model thật).
+
+
+## Executor — bước 5
+
+`retrieval/executor.py` thực thi dependency; `retrieval/evidence.py` kiểm tra bằng chứng
+metadata. Giữ API/CLI retrieval hiện tại, không gọi thêm OpenAI, VLM hay sửa planner.
+Quan hệ đang hỗ trợ là ảnh thuộc entity trong catalog, chưa là graph facts tổng quát.
+
+- Mỗi entity giữ đường bằng chứng riêng: step ID, bridge image ID, target image ID,
+  record ID và URL nguồn nếu có. Chỉ ghép dependency có chung entity và không mâu thuẫn
+  ảnh ở ancestor chung. Loại ảnh bridge khỏi kết quả của chính đường đó.
+- Caption được đối chiếu theo cụm tường minh, giữ dấu tiếng Việt. Lưu đoạn caption/
+  record hỗ trợ từng điều kiện. Thiếu cụm hoặc phủ định chưa có bằng chứng => unverified.
+  Không suy thiếu từ là sai và không dùng label benchmark làm bằng chứng.
+- Liên kết nhiều entity hoặc nguồn không chắc chắn bị cách ly khi cần định danh entity.
+  Các ứng viên bị loại vẫn lưu lý do; không tự sửa catalog để khớp kết quả model.
+- `hypotheses` chứa entity, các đường bridge, candidates/results và count_status riêng.
+  Còn nhiều giả thuyết => ambiguous_entity, results cấp group rỗng; không trộn ảnh hoặc
+  cộng số ảnh của entity khác nhau để đáp ứng yêu cầu. candidates cấp group chỉ để xem xét.
+- `count_status` có thể là not_requested, insufficient_candidates, unverified,
+  supported_by_metadata hoặc unresolved_entity. Số lượng hỗ trợ bởi metadata không
+  đồng nghĩa các ảnh đã được xác minh thị giác. `visual_verification=not_performed`.
+- Trạng thái toàn kế hoạch phân biệt candidate_results, partial_results, unresolved
+  và needs_clarification. Thiếu entity/bridge không fallback tìm toàn kho.
+- Beam mặc định 3 entity, 2 đường/entity; tối đa 64 tổ hợp khi ghép nhiều dependency.
+  Đường bị giới hạn tổ hợp được gắn path_join_truncated; hết budget mà chưa ghép được
+  trả path_budget_exceeded, không giả làm kết luận không có đáp án.
+
+Cùng lệnh retrieval, thêm hai settings `IMAGE_SEARCH_RETRIEVAL_PATHS_PER_ENTITY` và
+`IMAGE_SEARCH_RETRIEVAL_PATH_COMBINATION_LIMIT` nếu cần thay giới hạn.
+
+```bash
+OPENBLAS_NUM_THREADS=1 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --embeddings var/retrieval-v1/embeddings --method all --output-dir var/executor-v1/new-cached
+HF_HUB_OFFLINE=1 OPENBLAS_NUM_THREADS=1 image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/executor-v1/new-live
+```
+
+Đã kiểm tra lại cùng 6 kế hoạch thật ở bước 4, giữ nguyên input/vector/prompt, không gọi
+lại API. Artifact mới ở `var/executor-v1/`: `cached/`, `live/`, `index.html`, `report.md`
+và `verification.json`. HTML hiển thị từng giả thuyết và các đường bằng chứng.
+Phép đo tính cả kế hoạch unresolved/partial; không loại chúng để làm đẹp p90.
+Chưa đánh giá chất lượng retrieval toàn tập. Xác minh thị giác/rerank thuộc bước 6.
