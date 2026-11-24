@@ -85,3 +85,43 @@ Recall và tỷ lệ đủ mục tiêu trung bình theo intent_id. Độ trễ t
 | multi-hop | vector | 15 | 0.3333 | 0.3333 | 108.35 | 145.69 | 169.87 | 183.84 |
 | multi-hop | keyword | 15 | 0.9333 | 0.9333 | 2.52 | 2.81 | 2.88 | 3.15 |
 | multi-hop | hybrid | 15 | 0.6000 | 0.6000 | 98.30 | 109.98 | 113.49 | 134.48 |
+
+
+## Đánh giá pipeline planner → embedding → RRF → executor
+
+Đã chạy đủ 400 query v2 bằng planner v2 và index hiện có, không rerank, không tune
+sau khi thấy kết quả. 356 câu có nhãn dương được chấm; unknown/âm catalog báo riêng.
+Bảng test/canonical sau lấy trung bình theo họ ý định, ngân sách tối đa 10 ảnh:
+
+| Nhóm | Known Recall@10 pipeline | nDCG@10 RRF nguyên câu | nDCG@10 pipeline | Đủ mọi mục tiêu@10 pipeline |
+|---|---:|---:|---:|---:|
+| Single (69 câu) | 67,3% | 0,500 | 0,735 | 85,3% |
+| Multi-target (56 câu) | 38,4% | 0,325 | 0,385 | 75,9% |
+| Multi-hop (15 câu) | 0% | 0,362 | 0 | 0% |
+
+Pipeline cải thiện so với RRF nguyên câu ở single/multi-target; multi-hop thất bại
+ở route/nhận diện/chọn entity. Shortlist multi-hop vẫn có Known Recall@100 46,7%,
+nhưng nhiều nhánh bị giữ lại vì entity không khớp hoặc mơ hồ. BM25 nguyên câu vẫn
+có nDCG cao hơn pipeline ở cả ba nhóm; chưa kết luận pipeline là cấu hình tốt nhất.
+
+P50 toàn luồng 9,08 giây, p90 14,78 giây, p95 17,10 giây: **không đạt 300 ms**.
+Đo tối đa 8 yêu cầu đồng thời, tính cả OpenAI/client, CPU queue, embedding, executor
+và serialize; startup model/index ghi riêng, không nằm trong latency warm.
+Pipeline tuân count nên có thể trả ít hơn baseline; nDCG served không phải so ranking-only.
+
+Artifact local: `var/pipeline-v1/report.md`, `analysis.md`, `index.html`,
+`comparison.json`, `operational.json`, `verification.json`. Labels còn là ứng viên,
+không phải gold độc lập; test/corpus đã được xem. Không chỉnh prompt theo lượt này.
+
+Tái lập khi có dữ liệu/model local và API key (lệnh run gọi OpenAI, report chỉ chấm file):
+
+```bash
+HF_HUB_OFFLINE=1 OPENBLAS_NUM_THREADS=1 .venv/bin/python scripts/run_pipeline_evaluation.py --output-dir var/pipeline-new --workers 8
+.venv/bin/python scripts/report_pipeline_evaluation.py var/pipeline-new
+```
+
+Không ghi đè run đã có. `--resume` chỉ dùng khi chưa hoàn tất và code/config/input
+khớp run gốc. Report cần artifact baseline trong `var/evaluation-v2-all/` để đối chiếu.
+Script chạy thực tế lưu ở `executed-runner.py` với hash; bản repository sau đó chỉ
+sửa xuống dòng để đạt lint. Bộ test scorer kiểm tra ngân sách toàn cục, không tính
+shortlist mơ hồ là kết quả phục vụ và không coi unknown thành nhãn âm.

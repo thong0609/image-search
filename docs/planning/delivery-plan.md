@@ -11,7 +11,7 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 4 | Retrieval: mã hóa query của từng bước, tìm vector/keyword và kết hợp hybrid | Đã có vector/BM25/RRF theo mục tiêu, đã chạy thử query dev thật |
 | 5 | Thực thi kế hoạch: ghép retrieval theo từng mục tiêu, entity và bridge cho multi-hop | Đã có đường bằng chứng theo entity, tách giả thuyết và kiểm tra metadata; chưa xác minh thị giác |
 | 6 | Reranking: sắp xếp lại shortlist bằng model phù hợp | Chưa triển khai |
-| 7 | Đánh giá toàn pipeline, chọn cấu hình và tối ưu chất lượng/độ trễ | Sau khi có luồng hoàn chỉnh |
+| 7 | Đánh giá toàn pipeline, chọn cấu hình và tối ưu chất lượng/độ trễ | Đã đo luồng không rerank trên 400 câu; multi-hop và SLO chưa đạt |
 | 8 | Tích hợp API/backend và frontend, kiểm thử luồng người dùng | Sau cùng |
 
 Embedding ảnh được tạo offline; embedding query được tạo khi tìm kiếm.
