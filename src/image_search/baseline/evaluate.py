@@ -126,8 +126,8 @@ def evaluate_predictions(manifest_path, predictions_path, split="dev"):
                 f"RAM đỉnh process: {run['runtime']['peak_ram_mb']:.1f} MiB.",
                 f"Nạp model tìm kiếm: {run['model_load_seconds']:.2f} giây.",
                 (
-                    f"Mã hóa ảnh (index dùng lại): {run['index']['encode_seconds']:.2f} giây; "
-                    f"vector: {run['index']['vector_bytes']} bytes."
+                    f"Vector trong Qdrant: {run['index']['shape'][0]} ảnh, "
+                    f"{run['index']['shape'][1]} chiều."
                     if run.get("method", "vector") != "keyword"
                     else "Keyword chỉ dùng metadata, không nạp encoder khi truy vấn."
                 ),

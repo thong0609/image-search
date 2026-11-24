@@ -6,13 +6,12 @@ pytest.importorskip("numpy")
 
 from image_search.baseline.keyword import (  # noqa: E402
     build_documents,
+    build_keyword_index,
     fuse_rankings,
     keyword_search,
-    load_keyword_index,
     prepare_bm25,
     tokenize,
 )
-from image_search.baseline.utils import file_hash, write_jsonl  # noqa: E402
 
 
 def test_vietnamese_keywords_match_with_or_without_accents():
@@ -87,18 +86,13 @@ def test_rrf_rejects_invalid_parameters(top_k, rrf_k):
         fuse_rankings([], [], top_k, rrf_k)
 
 
-def test_keyword_index_rejects_changed_documents(tmp_path):
-    records = tmp_path / "records.jsonl"
-    write_jsonl(
-        records, [{"image_id": "a", "download_status": "success", "entity_name": "Chợ Hàn"}]
-    )
-    manifest = {
-        "files": {"records": {"path": str(records), "sha256": file_hash(records)}},
-        "images": [{"image_id": "a"}],
-    }
-    directory = tmp_path / "keyword"
-    load_keyword_index(manifest, directory, 1.2, 0.75)
-    load_keyword_index(manifest, directory, 1.2, 0.75)
-    (directory / "documents.jsonl").write_text("changed")
-    with pytest.raises(ValueError, match="Keyword index không tương thích"):
-        load_keyword_index(manifest, directory, 1.2, 0.75)
+def test_keyword_index_is_built_in_memory_from_records():
+    records = [{"image_id": "a", "download_status": "success", "entity_name": "Chợ Hàn"}]
+    index, metadata = build_keyword_index(records, ["a"], 1.2, 0.75)
+    assert keyword_search("chợ", index, 10)[0]["image_id"] == "a"
+    assert metadata["source"] == "qdrant_payload"
+    _, repeated = build_keyword_index(records, ["a"], 1.2, 0.75)
+    assert metadata == repeated
+    records[0]["entity_name"] = "Tên mới"
+    _, changed = build_keyword_index(records, ["a"], 1.2, 0.75)
+    assert metadata["documents_sha256"] != changed["documents_sha256"]

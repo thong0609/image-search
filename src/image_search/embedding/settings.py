@@ -10,7 +10,6 @@ class EmbeddingSettings(BaseSettings):
     )
 
     manifest: Path = Path("var/benchmark-v1/benchmark.json")
-    index_dir: Path = Path("var/index-v1")
     cache_dir: Path = Path("var/models")
     threads: int = Field(default=4, ge=1)
     batch_size: int = Field(default=8, ge=1, le=64)

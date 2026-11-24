@@ -33,3 +33,15 @@ Pull requests should explain the change, link related issues when available, and
 ## Security & Configuration
 
 Never commit credentials, API keys, or private image data. Document required configuration with placeholder values in an example environment file. Treat hidden workspace metadata directories as environment-managed; do not modify them as part of application work.
+
+
+## User decisions (required)
+
+- Qdrant is the persistent vector store agreed in the project plan. Do not add
+  NumPy vector files, disk vector caches, or an alternative retrieval backend.
+  NumPy calculations in memory are allowed; persist model/index metadata in Qdrant.
+- Follow the approved plan. If an implementation decision lacks necessary
+  information or changes that plan, ask before proceeding with the dependent work.
+- At task completion, explicitly report missing information, assumptions made,
+  and deviations from the approved plan (state none when applicable).
+- Keep implementation simple and explanations concise.

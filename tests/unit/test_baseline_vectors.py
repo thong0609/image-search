@@ -2,13 +2,7 @@ import pytest
 
 np = pytest.importorskip("numpy")
 
-from image_search.baseline.vectors import normalize, rank_images  # noqa: E402
-
-
-def test_cosine_search_uses_stable_image_id_order_for_ties():
-    vectors = normalize([[1, 0], [1, 0], [0, 1]])
-    found = rank_images(np.array([1, 0]), vectors, ["b", "a", "c"], 2)
-    assert [row["image_id"] for row in found] == ["a", "b"]
+from image_search.baseline.vectors import normalize  # noqa: E402
 
 
 @pytest.mark.parametrize("vectors", [[[0, 0]], [[float("nan"), 1]]])

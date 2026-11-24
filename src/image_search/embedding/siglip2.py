@@ -49,9 +49,7 @@ class Siglip2Embedding:
     def __init__(self, settings):
         self.settings = settings
         started = time.perf_counter()
-        self.corpus, self.index, self.image_vectors = load_index(
-            settings.manifest, settings.index_dir
-        )
+        self.corpus, self.index, self.vector_store = load_index()
         self.index_check_seconds = time.perf_counter() - started
         config = self.index["config"]
         started = time.perf_counter()
@@ -61,7 +59,7 @@ class Siglip2Embedding:
         self.model_load_seconds = time.perf_counter() - started
         if processor_hash(self.processor) != self.index["processor_sha256"]:
             raise ValueError("Processor không khớp image index; cần index phiên bản mới")
-        self.dimensions = self.image_vectors.shape[1]
+        self.dimensions = self.vector_store.dimensions
         self.max_length = self.model.config.text_config.max_position_embeddings
 
     def encode_texts(self, texts):
@@ -106,7 +104,7 @@ class Siglip2Embedding:
                 vector = normalize(features.cpu().numpy())[0]
             finally:
                 image.close()
-            stored = self.image_vectors[position]
+            stored = self.vector_store.vector_for(row["image_id"])
             error = float(np.max(np.abs(vector - stored)))
             if not np.allclose(vector, stored, atol=1e-5, rtol=1e-4):
                 raise ValueError(f"Mã hóa lại không khớp index: {row['image_id']}")

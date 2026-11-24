@@ -5,7 +5,7 @@ Giữ scaffold API/frontend, migration và các adapter hạ tầng để phát 
 
 ## Chạy baseline
 
-Không cần Docker cho baseline. Cài Python 3.12 và uv, sau đó:
+Baseline dùng Qdrant để lưu và tìm vector. Cài Python 3.12, uv và Docker, sau đó:
 
 ```bash
 uv sync --frozen --extra baseline
@@ -45,7 +45,7 @@ image-search-embedding plans var/planner-v2/dev/predictions.jsonl --output-dir v
 ```
 
 Dùng `HF_HUB_OFFLINE=1` nếu chỉ muốn đọc model đã có trong cache local.
-Đầu ra gồm `vectors.npy`, `steps.jsonl` ánh xạ query/step/target và `embedding.json`.
+Vector text chỉ tồn tại trong RAM; CLI ghi mapping `steps.jsonl` và báo cáo `embedding.json`, không ghi vector ra đĩa.
 Chi tiết và phép đo: [embedding cho retrieval](docs/baseline/baseline-usage.md#embedding-cho-retrieval).
 
 ## Retrieval theo planner
@@ -56,11 +56,11 @@ Executor tách các entity mơ hồ thành giả thuyết riêng, không cộng 
 kiểm tra điều kiện trên metadata và ghi rõ phần chưa xác minh thị giác.
 
 ```bash
-image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --embeddings var/retrieval-v1/embeddings --method all --output-dir var/retrieval-v1/new-results
+image-search-retrieval var/retrieval-v1/planner/predictions.jsonl --method all --output-dir var/retrieval-v1/new-results
 ```
 
-Bỏ `--embeddings` để mã hóa query trực tiếp bằng SigLIP2 trước retrieval.
-Cần index và metadata local đã chuẩn bị; [hướng dẫn chi tiết](docs/baseline/baseline-usage.md#retrieval-theo-kế-hoạch).
+Query được mã hóa trực tiếp bằng SigLIP2 rồi tìm trong Qdrant.
+Cần Qdrant đã có vector và metadata tìm kiếm; runtime không đọc CSV/JSONL nguồn hoặc keyword index trên đĩa; [hướng dẫn chi tiết](docs/baseline/baseline-usage.md#retrieval-theo-kế-hoạch).
 
 ## Scaffold hiện có
 
@@ -169,3 +169,13 @@ npm run start
 ```
 
 `start` chạy production build trên port 3000 sau khi dừng dev server. Trang hiện tại chỉ là shell tối giản với search chưa bật; không giả kết quả hoặc gọi model. Stack: Next.js App Router/TypeScript, Tailwind CSS, shadcn config + Button, TanStack Query và fetch. Thư mục theo feature và quy tắc tích hợp ở [frontend/README.md](frontend/README.md). FE scaffold thuộc phase 0; search/grid/grouping/auth/admin được triển khai từ phase tương ứng trong delivery plan. Cả Node và Next.js chạy local riêng Docker DB.
+
+
+Vector retrieval của pipeline dùng Qdrant tại `http://localhost:6333`, collection
+`image_search_siglip2_v1`. Khởi động bằng `docker compose up -d qdrant`, rồi chạy
+`uv run image-search-qdrant` để lập index ảnh trực tiếp vào Qdrant (cần extra `baseline`; dùng lại collection nếu đã có).
+Xem [hướng dẫn Qdrant](docs/baseline/baseline-usage.md#lưu-vector-vào-qdrant)
+cho cấu hình và nơi lưu dữ liệu. Với collection cũ, chạy
+`uv run image-search-qdrant --sync-metadata` một lần để nạp metadata từ nguồn đã pin.
+Tên entity, caption, nhãn, các record nguồn và đường dẫn ảnh nằm trong payload Qdrant;
+BM25 dựng trong RAM từ payload, dùng cùng thuật toán và RRF 1:1 như trước.

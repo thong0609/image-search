@@ -7,8 +7,6 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
-import numpy as np
-
 from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_json, write_jsonl
 from image_search.embedding.settings import EmbeddingSettings
 from image_search.embedding.siglip2 import Siglip2Embedding
@@ -36,6 +34,9 @@ def main():
         parser.error("Thiếu OPENAI_API_KEY")
     import hashlib
 
+    index_started = time.perf_counter()
+    engine, _, image_index = load_engine(embedding, retrieval)
+    index_load_seconds = time.perf_counter() - index_started
     configuration = {
         "queries": str(args.queries.resolve()),
         "queries_sha256": file_hash(args.queries),
@@ -46,7 +47,9 @@ def main():
         "retrieval": retrieval.model_dump(mode="json"),
         "prompt_version": PROMPT_VERSION,
         "prompt_sha256": hashlib.sha256(PROMPT.encode()).hexdigest(),
-        "image_index_sha256": file_hash(embedding.index_dir / "index.json"),
+        "image_index_sha256": image_index["index_sha256"],
+        "keyword_metadata": engine.keyword_metadata,
+        "search_metadata_sha256": image_index["search_metadata_sha256"],
         "method": "hybrid",
         "rrf_weights": [1, 1],
         "workers": args.workers,
@@ -54,7 +57,7 @@ def main():
         "expected_or_labels_sent_to_model": False,
         "sources": {
             str(p): file_hash(p)
-            for package in ("planner", "embedding", "retrieval")
+            for package in ("planner", "embedding", "retrieval", "baseline", "adapters/qdrant")
             for p in Path("src/image_search", package).glob("*.py")
         },
         "runner_sha256": file_hash(Path(__file__)),
@@ -84,17 +87,15 @@ def main():
         args.output_dir.mkdir(parents=True)
         write_json(args.output_dir / "run.json", {"configuration": configuration})
     started = time.perf_counter()
-    engine, _, _ = load_engine(embedding, retrieval)
     encoder = Siglip2Embedding(embedding)
     encoder.encode_texts(["ảnh cửa hàng"])  # Warmup trước đo; không gọi API.
-    startup_seconds = time.perf_counter() - started
+    startup_seconds = index_load_seconds + time.perf_counter() - started
     cpu = threading.Lock()
     plans_path = args.output_dir / "plans.jsonl"
     results_path = args.output_dir / "predictions.jsonl"
-    vectors_path = args.output_dir / "embedding-checkpoint.jsonl"
     done = read_jsonl(results_path) if results_path.exists() else []
     done_ids = {r["query_id"] for r in done}
-    for path in (plans_path, vectors_path):
+    for path in (plans_path,):
         if path.exists():
             write_jsonl(path, [r for r in read_jsonl(path) if r["query_id"] in done_ids])
     remaining = [q for q in queries if q["query_id"] not in done_ids]
@@ -104,7 +105,6 @@ def main():
         qid = query["query_id"]
         with make_client(planner) as client:
             planned = {"query_id": qid, **route_query(query["text"], planner, client)}
-        vector_rows = []
         error = None
         wait_start = time.perf_counter()
         with cpu:
@@ -126,15 +126,6 @@ def main():
                         if any(d["truncated"] for d in details):
                             raise ValueError("truncated_query")
                         mapping = {s["id"]: v for s, v in zip(plan["steps"], array, strict=True)}
-                        vector_rows = [
-                            {
-                                "query_id": qid,
-                                "step_id": s["id"],
-                                "search_text": s["search_text"],
-                                "vector": v.tolist(),
-                            }
-                            for s, v in zip(plan["steps"], array, strict=True)
-                        ]
                     begin = time.perf_counter()
                     result = engine.execute(plan, "hybrid", mapping)
                     executor_ms = (time.perf_counter() - begin) * 1000
@@ -157,7 +148,7 @@ def main():
             "executor": executor_ms,
             "end_to_end": (time.perf_counter() - submitted) * 1000,
         }
-        return planned, record, vector_rows
+        return planned, record
 
     def append(stream, rows):
         for row in rows:
@@ -169,7 +160,6 @@ def main():
     with (
         plans_path.open("a", encoding="utf-8") as plan_file,
         results_path.open("a", encoding="utf-8") as result_file,
-        vectors_path.open("a", encoding="utf-8") as vector_file,
         ThreadPoolExecutor(max_workers=args.workers) as pool,
     ):
         pending = {}
@@ -180,10 +170,9 @@ def main():
             finished, _ = wait(pending, return_when=FIRST_COMPLETED)
             for future in finished:
                 pending.pop(future)
-                planned, result, vectors = future.result()
+                planned, result = future.result()
                 append(plan_file, [planned])
-                append(vector_file, vectors)
-                append(result_file, [result])  # Commit marker sau plan + vector.
+                append(result_file, [result])  # Commit marker sau plan.
                 done.append(result)
                 if planned["error_code"] in ("api_http_401", "api_http_403", "api_http_429"):
                     stop = True
@@ -212,17 +201,6 @@ def main():
                         ]
     if len(done) != len(queries):
         parser.exit(1, "Run dừng sớm do key/quyền/quota; có thể resume cùng cấu hình.\n")
-    vector_rows = read_jsonl(vectors_path)
-    if vector_rows:
-        np.save(
-            args.output_dir / "query-vectors.npy",
-            np.asarray([r.pop("vector") for r in vector_rows], dtype=np.float32),
-            allow_pickle=False,
-        )
-        write_jsonl(
-            args.output_dir / "query-steps.jsonl",
-            [dict(r, row_index=i) for i, r in enumerate(vector_rows)],
-        )
     write_json(
         args.output_dir / "completed.json",
         {
@@ -230,12 +208,8 @@ def main():
             "plans_sha256": file_hash(plans_path),
             "predictions_sha256": file_hash(results_path),
             "startup_seconds": startup_seconds,
-            "query_vectors_sha256": file_hash(args.output_dir / "query-vectors.npy")
-            if vector_rows
-            else None,
         },
     )
-    vectors_path.unlink(missing_ok=True)
     print("Completed", args.output_dir, flush=True)
 
 

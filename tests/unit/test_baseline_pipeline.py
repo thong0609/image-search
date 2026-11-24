@@ -26,6 +26,11 @@ from image_search.baseline.records import REQUIRED_COLUMNS, read_approved_record
 from image_search.baseline.utils import read_json, read_jsonl, write_jsonl  # noqa: E402
 from image_search.baseline.vectors import build_index, search_index  # noqa: E402
 
+pytestmark = [
+    pytest.mark.filterwarnings("ignore:Payload indexes:UserWarning"),
+    pytest.mark.filterwarnings("ignore:Local mode performs exact:UserWarning"),
+]
+
 
 def make_tiny_model(path):
     config = SiglipConfig(
@@ -106,11 +111,18 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
     freeze_benchmark(source, records_path, queries_path, answers_path, manifest)
     model_path = tmp_path / "tiny-model"
     make_tiny_model(model_path)
-    index_dir = tmp_path / "index"
-    build_index(manifest, index_dir, str(model_path), "0" * 40, batch_size=2, threads=1)
+    from qdrant_client import QdrantClient
+
+    client = QdrantClient(":memory:")
+    monkeypatch.setattr(
+        "image_search.adapters.qdrant.client.create_qdrant_client", lambda _: client
+    )
+    monkeypatch.setattr(client, "close", lambda: None)
+    collection = "fixture-images"
+    build_index(manifest, collection, str(model_path), "0" * 40, batch_size=2, threads=1)
     # Chạy lại dùng index cũ, không tạo vector lần nữa.
-    build_index(manifest, index_dir, str(model_path), "0" * 40, batch_size=2, threads=1)
-    output = search_index(manifest, index_dir, split="dev", threads=1)
+    build_index(manifest, collection, str(model_path), "0" * 40, batch_size=2, threads=1)
+    output = search_index(manifest, collection, split="dev", threads=1, output_dir=tmp_path / "dev")
     report = evaluate_predictions(manifest, output / "predictions.jsonl")
     assert report["summary"]["dev/answerable"]["queries"] == 3
     assert report["summary"]["dev/no-answer"]["queries"] == 1
@@ -127,7 +139,7 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="thiếu hoặc thừa query"):
         evaluate_predictions(manifest, output / "missing.jsonl")
     with pytest.raises(ValueError, match="Index không tương thích"):
-        build_index(manifest, index_dir, str(model_path), "1" * 40)
+        build_index(manifest, collection, str(model_path), "1" * 40)
     for method in ["hybrid", "keyword"]:
         if method == "keyword":
             monkeypatch.setattr(
@@ -135,7 +147,12 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
                 lambda *args: pytest.fail("Keyword không được nạp model"),
             )
         output = search_index(
-            manifest, index_dir, split="dev", threads=1, method=method, output_dir=tmp_path / method
+            manifest,
+            collection,
+            split="dev",
+            threads=1,
+            method=method,
+            output_dir=tmp_path / method,
         )
         report = evaluate_predictions(manifest, output / "predictions.jsonl")
         assert report["run"]["method"] == method
@@ -147,7 +164,7 @@ def test_full_baseline_with_local_tiny_model(tmp_path, monkeypatch):
                 "candidates": 100,
             }
         assert len(read_jsonl(output / "predictions.jsonl")) == 4
-        assert read_json(output / "run.json")["keyword_index"]["config"]["fields"] == [
+        assert read_json(output / "run.json")["keyword_index"]["fields"] == [
             "entity_name",
             "leaf_label",
             "page_title",

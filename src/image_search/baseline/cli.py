@@ -12,13 +12,12 @@ from image_search.baseline.vectors import build_index, search_index
 
 def add_index_arguments(parser):
     parser.add_argument("--manifest", type=Path, default=Path("var/benchmark.json"))
-    parser.add_argument("--index-dir", type=Path, default=Path("var/index"))
+    parser.add_argument("--collection", default=None)
     parser.add_argument("--threads", type=int, default=4)
 
 
 def add_search_arguments(parser):
     parser.add_argument("--method", choices=["vector", "keyword", "hybrid"], default="vector")
-    parser.add_argument("--keyword-dir", type=Path)
     parser.add_argument("--rrf-k", type=int)
     parser.add_argument("--candidates", type=int)
 
@@ -106,7 +105,7 @@ def main():
         elif args.command == "index":
             build_index(
                 args.manifest,
-                args.index_dir,
+                args.collection,
                 args.model,
                 args.revision,
                 args.batch_size,
@@ -115,26 +114,24 @@ def main():
         elif args.command == "search":
             search_index(
                 args.manifest,
-                args.index_dir,
+                args.collection,
                 text=args.text,
                 top_k=args.top_k,
                 threads=args.threads,
                 output_dir=args.output_dir,
                 method=args.method,
-                keyword_dir=args.keyword_dir,
                 rrf_k=args.rrf_k,
                 candidates=args.candidates,
             )
         elif args.command == "run":
             output = search_index(
                 args.manifest,
-                args.index_dir,
+                args.collection,
                 split=args.split,
                 seed=args.seed,
                 threads=args.threads,
                 output_dir=args.output_dir,
                 method=args.method,
-                keyword_dir=args.keyword_dir,
                 rrf_k=args.rrf_k,
                 candidates=args.candidates,
             )

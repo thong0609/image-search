@@ -9,11 +9,10 @@ from pathlib import Path
 from PIL import Image
 
 from image_search.baseline.benchmark import load_manifest, write_gallery
-from image_search.baseline.keyword import fuse_rankings, keyword_search, load_keyword_index
+from image_search.baseline.keyword import build_keyword_index, fuse_rankings, keyword_search
 from image_search.baseline.settings import get_baseline_settings
 from image_search.baseline.utils import (
     file_hash,
-    read_json,
     read_jsonl,
     runtime_info,
     write_json,
@@ -78,124 +77,130 @@ def encode_text(text, model, processor):
 
 
 def build_index(
-    manifest_path,
-    index_dir,
-    model_name=None,
-    revision=None,
-    batch_size=8,
-    threads=4,
+    manifest_path, collection=None, model_name=None, revision=None, batch_size=8, threads=4
 ):
+    import json
+
     import numpy as np
     import torch
 
+    from image_search.adapters.qdrant.client import create_qdrant_client
+    from image_search.adapters.qdrant.vectors import QdrantVectors
+    from image_search.config import get_settings
+    from image_search.retrieval.catalog import Catalog
+    from image_search.retrieval.settings import RetrievalSettings
+
     settings = get_baseline_settings()
-    model_name = settings.model_name if model_name is None else model_name
-    revision = settings.model_revision if revision is None else revision
-    if batch_size < 1:
-        raise ValueError("batch-size phải lớn hơn 0")
+    collection = collection or RetrievalSettings().qdrant_collection
+    if batch_size < 1 or threads < 1:
+        raise ValueError("batch-size/threads phải lớn hơn 0")
     manifest = load_manifest(manifest_path)
-    index_dir = Path(index_dir)
-    index_dir.mkdir(parents=True, exist_ok=True)
-    metadata_path = index_dir / "index.json"
-    config = {
-        "manifest_sha256": file_hash(manifest_path),
-        "model": model_name,
-        "revision": revision,
-        "preprocessing": PREPROCESSING,
-        "libraries": library_versions(),
-    }
-    if metadata_path.exists():
-        metadata = read_json(metadata_path)
-        if metadata["config"] != config:
-            raise ValueError("Index không tương thích; dùng thư mục index mới")
-        load_index(manifest_path, index_dir)
-        print("Dùng lại index đã kiểm tra")
-        return
-    started = time.perf_counter()
-    model, processor = load_encoder(model_name, revision, index_dir.parent / "models", threads)
-    model_load_seconds = time.perf_counter() - started
-    started = time.perf_counter()
-    batches = []
-    images = manifest["images"]
-    for start in range(0, len(images), batch_size):
-        batch = []
-        for image in images[start : start + batch_size]:
-            with Image.open(image["local_path"]) as source:
-                batch.append(source.convert("RGB"))
-        inputs = processor(images=batch, return_tensors="pt")
-        with torch.inference_mode():
-            features = model.get_image_features(**inputs)
-        batches.append(normalize(features.cpu().numpy()))
-        for image in batch:
-            image.close()
-        print(f"Mã hóa {min(start + batch_size, len(images))}/{len(images)}", flush=True)
-    vectors = np.concatenate(batches)
-    vector_path = index_dir / "images.npy"
-    np.save(vector_path, vectors, allow_pickle=False)
-    write_json(
-        metadata_path,
-        {
-            "config": config,
-            "processor_sha256": processor_hash(processor),
-            "image_ids": [row["image_id"] for row in images],
-            "vector_sha256": file_hash(vector_path),
+    client = create_qdrant_client(get_settings())
+    try:
+        if client.collection_exists(collection):
+            _, existing, existing_store = load_index(manifest_path, collection)
+            existing_store.client.close()
+            if existing["config"]["model"] != (model_name or settings.model_name) or existing[
+                "config"
+            ]["revision"] != (revision or settings.model_revision):
+                raise ValueError("Index không tương thích; dùng collection mới")
+            print("Dùng lại collection Qdrant đã kiểm tra")
+            return
+        model, processor = load_encoder(
+            model_name or settings.model_name,
+            revision or settings.model_revision,
+            Path("var/models"),
+            threads,
+        )
+        batches = []
+        for start in range(0, len(manifest["images"]), batch_size):
+            batch = []
+            try:
+                for row in manifest["images"][start : start + batch_size]:
+                    with Image.open(row["local_path"]) as image:
+                        batch.append(image.convert("RGB"))
+                inputs = processor(images=batch, return_tensors="pt")
+                with torch.inference_mode():
+                    features = model.get_image_features(**inputs)
+                batches.append(normalize(features.cpu().numpy()))
+            finally:
+                for image in batch:
+                    image.close()
+        vectors = np.concatenate(batches)
+        index = {
+            "config": {
+                "manifest_sha256": file_hash(manifest_path),
+                "model": model_name or settings.model_name,
+                "revision": revision or settings.model_revision,
+                "preprocessing": PREPROCESSING,
+                "libraries": library_versions(),
+            },
+            "image_ids": [r["image_id"] for r in manifest["images"]],
             "shape": list(vectors.shape),
-            "batch_size": batch_size,
-            "threads": threads,
-            "model_load_seconds": model_load_seconds,
-            "encode_seconds": time.perf_counter() - started,
-            "vector_bytes": vector_path.stat().st_size,
-            "runtime": runtime_info(),
-        },
-    )
+            "processor_sha256": processor_hash(processor),
+        }
+        index["index_sha256"] = hashlib.sha256(
+            json.dumps(index, sort_keys=True).encode()
+        ).hexdigest()
+        catalog = Catalog(read_jsonl(manifest["files"]["records"]["path"]), index["image_ids"])
+        store = QdrantVectors(client, collection, index["index_sha256"], vectors.shape[1])
+        store.upload(
+            index["image_ids"],
+            vectors,
+            catalog,
+            index["config"]["model"],
+            index["config"]["revision"],
+        )
+        from image_search.adapters.qdrant.metadata import sync_metadata
+
+        sync_metadata(
+            store, index, catalog, manifest["images"], manifest["files"]["records"]["sha256"]
+        )
+    finally:
+        client.close()
 
 
-def load_index(manifest_path, index_dir):
-    import numpy as np
+def load_index(manifest_path=None, collection=None):
+    from image_search.adapters.qdrant.client import create_qdrant_client
+    from image_search.adapters.qdrant.vectors import QdrantVectors, read_metadata
+    from image_search.config import get_settings
+    from image_search.retrieval.settings import RetrievalSettings
 
-    manifest = load_manifest(manifest_path)
-    index_dir = Path(index_dir)
-    metadata = read_json(index_dir / "index.json")
-    config = metadata["config"]
-    if (
-        config["manifest_sha256"] != file_hash(manifest_path)
-        or config["preprocessing"] != PREPROCESSING
-        or config["libraries"] != library_versions()
-    ):
-        raise ValueError("Index không khớp benchmark/cấu hình/thư viện")
-    ids = [row["image_id"] for row in manifest["images"]]
-    if ids != metadata["image_ids"]:
-        raise ValueError("Thứ tự image_id không khớp index")
-    vector_path = index_dir / "images.npy"
-    if file_hash(vector_path) != metadata["vector_sha256"]:
-        raise ValueError("File vector đã thay đổi")
-    vectors = np.load(vector_path, allow_pickle=False)
-    if (
-        vectors.ndim != 2
-        or list(vectors.shape) != metadata["shape"]
-        or len(vectors) != len(ids)
-        or not np.isfinite(vectors).all()
-        or not np.allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-5)
-    ):
-        raise ValueError("Vector không hợp lệ hoặc chưa chuẩn hóa")
-    return manifest, metadata, vectors
+    collection = collection or RetrievalSettings().qdrant_collection
+    manifest = load_manifest(manifest_path) if manifest_path else None
+    client = create_qdrant_client(get_settings())
+    try:
+        metadata = read_metadata(client, collection)
+        config = metadata["config"]
+        if (
+            (manifest_path and config["manifest_sha256"] != file_hash(manifest_path))
+            or config["preprocessing"] != PREPROCESSING
+            or config["libraries"] != library_versions()
+        ):
+            raise ValueError("Qdrant index không khớp corpus/model/thư viện")
+        if manifest and [r["image_id"] for r in manifest["images"]] != metadata["image_ids"]:
+            raise ValueError("Image IDs không khớp Qdrant index")
+        store = QdrantVectors(client, collection, metadata["index_sha256"], metadata["shape"][1])
+        store.validate(metadata["image_ids"])
+        from image_search.adapters.qdrant.metadata import read_payloads
 
-
-def rank_images(vector, vectors, image_ids, top_k):
-    import numpy as np
-
-    if top_k < 1:
-        raise ValueError("top-k phải lớn hơn 0")
-    scores = vectors @ vector
-    if not np.isfinite(scores).all():
-        raise ValueError("Điểm tìm kiếm NaN/Inf")
-    order = sorted(range(len(image_ids)), key=lambda i: (-float(scores[i]), image_ids[i]))
-    return [{"image_id": image_ids[i], "score": float(scores[i])} for i in order[:top_k]]
+        if not metadata.get("search_metadata_sha256"):
+            raise ValueError(
+                "Thiếu search metadata trong Qdrant; chạy image-search-qdrant --sync-metadata"
+            )
+        store.metadata_hash = metadata["search_metadata_sha256"]
+        payloads = read_payloads(store, metadata["image_ids"], store.metadata_hash)
+        store.payloads = payloads
+        corpus = {"images": [payloads[iid]["image"] for iid in metadata["image_ids"]]}
+        return manifest or corpus, metadata, store
+    except Exception:
+        client.close()
+        raise
 
 
 def search_index(
     manifest_path,
-    index_dir,
+    collection=None,
     text=None,
     split="dev",
     top_k=10,
@@ -203,7 +208,6 @@ def search_index(
     threads=4,
     output_dir=None,
     method="vector",
-    keyword_dir=None,
     rrf_k=None,
     candidates=None,
 ):
@@ -216,13 +220,13 @@ def search_index(
         raise ValueError("Phương pháp, top-k hoặc threads không hợp lệ")
     if rrf_k < 1 or (method == "hybrid" and candidates < top_k):
         raise ValueError("Cấu hình hybrid không hợp lệ; candidates cần >= top-k")
-    manifest, metadata, vectors = load_index(manifest_path, index_dir)
+    manifest, metadata, store = load_index(None if text is not None else manifest_path, collection)
     config = metadata["config"]
     model_load_seconds = 0
     if method != "keyword":
         started = time.perf_counter()
         model, processor = load_encoder(
-            config["model"], config["revision"], Path(index_dir).parent / "models", threads
+            config["model"], config["revision"], Path("var/models"), threads
         )
         model_load_seconds = time.perf_counter() - started
         if processor_hash(processor) != metadata["processor_sha256"]:
@@ -231,12 +235,12 @@ def search_index(
     keyword_load_seconds = 0
     if method != "vector":
         started = time.perf_counter()
-        keyword_dir = Path(keyword_dir or Path(index_dir) / "keyword")
-        keyword_index, keyword_metadata = load_keyword_index(
-            manifest, keyword_dir, settings.keyword_k1, settings.keyword_b
+        records = [r for payload in store.payloads.values() for r in payload["records"]]
+        keyword_index, keyword_metadata = build_keyword_index(
+            records, metadata["image_ids"], settings.keyword_k1, settings.keyword_b
         )
         keyword_load_seconds = time.perf_counter() - started
-    default_output = Path(index_dir).parent / ("search" if text is not None else split)
+    default_output = Path("var") / ("search" if text is not None else split)
     if method != "vector":
         default_output = default_output / method
     output_dir = Path(output_dir or default_output)
@@ -257,7 +261,7 @@ def search_index(
         count = candidates if method == "hybrid" else top_k
         if method != "keyword":
             vector = encode_text(query["text"], model, processor)
-            vector_results = rank_images(vector, vectors, metadata["image_ids"], count)
+            vector_results = store.search(vector, count, set(metadata["image_ids"]))
         if method != "vector":
             keyword_results = keyword_search(query["text"], keyword_index, count)
         if method == "hybrid":
@@ -283,8 +287,8 @@ def search_index(
     write_json(
         output_dir / "run.json",
         {
-            "manifest_sha256": file_hash(manifest_path),
-            "index_sha256": file_hash(Path(index_dir) / "index.json"),
+            "manifest_sha256": metadata["config"]["manifest_sha256"],
+            "index_sha256": metadata["index_sha256"],
             "split": split if text is None else None,
             "seed": seed,
             "rounds": rounds,

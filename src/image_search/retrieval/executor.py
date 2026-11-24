@@ -43,9 +43,9 @@ class PlanExecutor:
 
     def resolve(self, step, scope, vector, method):
         search = self.engine.search
-        allowed = None if scope is None else self.catalog.images_for(scope)
+        entity_ids = None if scope is None else set(scope)
         found = search(
-            step.search_text, vector, method, self.settings.bridge_candidates, allowed=allowed
+            step.search_text, vector, method, self.settings.bridge_candidates, entity_ids=entity_ids
         )
         options, rejected = {}, []
         for row in found:
@@ -85,7 +85,7 @@ class PlanExecutor:
                     vector,
                     method,
                     max(self.settings.top_k, count),
-                    allowed=None if eid is None else self.catalog.images_for({eid}),
+                    entity_ids=None if eid is None else {eid},
                     excluded=bridges,
                 )
                 for row in found:

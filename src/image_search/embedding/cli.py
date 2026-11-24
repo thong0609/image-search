@@ -15,8 +15,6 @@ from image_search.embedding.siglip2 import Siglip2Embedding, plan_steps
 
 def make_parser(settings):
     parser = argparse.ArgumentParser(description="Embedding SigLIP2 từ index hiện có")
-    parser.add_argument("--manifest", type=Path, default=settings.manifest)
-    parser.add_argument("--index-dir", type=Path, default=settings.index_dir)
     parser.add_argument("--threads", type=int, default=settings.threads)
     parser.add_argument("--batch-size", type=int, default=settings.batch_size)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -44,8 +42,6 @@ def main():
         settings = EmbeddingSettings(
             **{
                 **settings.model_dump(),
-                "manifest": args.manifest,
-                "index_dir": args.index_dir,
                 "threads": args.threads,
                 "batch_size": args.batch_size,
             }
@@ -79,10 +75,9 @@ def main():
             "preprocessing": encoder.index["config"]["preprocessing"],
             "libraries": encoder.index["config"]["libraries"],
             "processor_sha256": encoder.index["processor_sha256"],
-            "image_index_sha256": file_hash(settings.index_dir / "index.json"),
-            "image_vectors_sha256": encoder.index["vector_sha256"],
-            "manifest_sha256": file_hash(settings.manifest),
-            "image_count": len(encoder.image_vectors),
+            "image_index_sha256": encoder.index["index_sha256"],
+            "manifest_sha256": encoder.index["config"]["manifest_sha256"],
+            "image_count": len(encoder.index["image_ids"]),
             "dimensions": encoder.dimensions,
             "max_text_tokens": encoder.max_length,
             "index_check_seconds": encoder.index_check_seconds,
@@ -106,9 +101,7 @@ def main():
                 truncated_steps=sum(r["truncated"] for r in items),
             )
             args.output_dir.mkdir(parents=True)
-            np.save(args.output_dir / "vectors.npy", vectors, allow_pickle=False)
             write_jsonl(args.output_dir / "steps.jsonl", items)
-            metadata["vectors_sha256"] = file_hash(args.output_dir / "vectors.npy")
             metadata["steps_sha256"] = file_hash(args.output_dir / "steps.jsonl")
             if args.command == "benchmark":
                 groups = defaultdict(list)

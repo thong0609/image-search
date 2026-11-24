@@ -1,12 +1,11 @@
 """BM25 trên metadata đã duyệt, một document cho mỗi image_id."""
 
+import hashlib
+import json
 import math
 import re
 import unicodedata
 from collections import Counter, defaultdict
-from pathlib import Path
-
-from image_search.baseline.utils import file_hash, read_json, read_jsonl, write_json, write_jsonl
 
 FIELDS = ["entity_name", "leaf_label", "page_title", "mo_ta"]
 TOKENIZER_VERSION = "unicode-nfkd;lower;fold-vietnamese;alphanumeric;v1"
@@ -58,37 +57,17 @@ def prepare_bm25(documents, k1, b):
     }
 
 
-def load_keyword_index(manifest, index_dir, k1, b):
-    index_dir = Path(index_dir)
-    index_dir.mkdir(parents=True, exist_ok=True)
-    docs_path = index_dir / "documents.jsonl"
-    meta_path = index_dir / "index.json"
-    config = {
-        "records_sha256": manifest["files"]["records"]["sha256"],
-        "image_ids": [row["image_id"] for row in manifest["images"]],
+def build_keyword_index(records, image_ids, k1, b):
+    documents = build_documents(records, image_ids)
+    content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in documents).encode()
+    metadata = {
+        "source": "qdrant_payload",
         "fields": FIELDS,
         "tokenizer": TOKENIZER_VERSION,
         "k1": k1,
         "b": b,
+        "documents_sha256": hashlib.sha256(content).hexdigest(),
     }
-    if meta_path.exists():
-        metadata = read_json(meta_path)
-        if metadata["config"] != config or file_hash(docs_path) != metadata["documents_sha256"]:
-            raise ValueError("Keyword index không tương thích; dùng --keyword-dir mới")
-        documents = read_jsonl(docs_path)
-    else:
-        documents = build_documents(
-            read_jsonl(manifest["files"]["records"]["path"]), config["image_ids"]
-        )
-        write_jsonl(docs_path, documents)
-        metadata = {
-            "config": config,
-            "documents_sha256": file_hash(docs_path),
-            "document_bytes": docs_path.stat().st_size,
-        }
-        write_json(meta_path, metadata)
-    if [row["image_id"] for row in documents] != config["image_ids"]:
-        raise ValueError("Thứ tự image_id không khớp keyword index")
     return prepare_bm25(documents, k1, b), metadata
 
 
