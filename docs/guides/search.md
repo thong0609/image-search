@@ -37,6 +37,19 @@ HF_HUB_OFFLINE=1 uv run image-search-retrieval var/planner-new/predictions.jsonl
   hoạch, không lấp bằng tìm cả câu; `--aliases` nhận JSON alias → danh sách entity ID.
 - Mỗi phương pháp có `predictions.jsonl`, `timings.jsonl`, `report.json`, `results.html`.
 - Cấu hình `IMAGE_SEARCH_RETRIEVAL_*` và `IMAGE_SEARCH_EMBEDDING_*` trong `.env.example`.
+- `IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS` mặc định `false`. Đặt `true` để thêm nhánh tên + mô tả
+  vào hybrid, dùng lại vector câu hỏi SigLIP2. Cần nạp `image-search-qdrant --sync-text` trước; `false` dùng hai nhánh cũ.
+  `vector`, `keyword` và baseline tìm cả câu không thêm nhánh text. `run.json` ghi cấu hình bật/tắt
+  và `text_metadata` để đối chiếu snapshot.
+
+Đo A/B cùng plan, không gọi OpenAI (dùng hai thư mục output mới):
+
+```bash
+HF_HUB_OFFLINE=1 IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS=false uv run image-search-retrieval var/list-v1/v3.jsonl --method hybrid --rounds 3 --output-dir var/text-ab-off
+HF_HUB_OFFLINE=1 IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS=true uv run image-search-retrieval var/list-v1/v3.jsonl --method hybrid --rounds 3 --output-dir var/text-ab-on
+uv run python scripts/evaluate_retrieval.py var/text-ab-off --queries var/multihop-v3/queries.jsonl --answers var/multihop-v3/answers.jsonl
+uv run python scripts/evaluate_retrieval.py var/text-ab-on --queries var/multihop-v3/queries.jsonl --answers var/multihop-v3/answers.jsonl
+```
 
 ## Đánh giá
 

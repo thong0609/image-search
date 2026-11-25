@@ -113,7 +113,7 @@ def test_runtime_does_not_read_source_files_and_bm25_uses_qdrant(snapshot, monke
     monkeypatch.setattr("image_search.retrieval.runtime.load_graph", lambda *_: Graph())
     engine, corpus, _ = load_engine(
         EmbeddingSettings(_env_file=None, manifest=Path("missing.json")),
-        RetrievalSettings(_env_file=None, qdrant_collection="images"),
+        RetrievalSettings(_env_file=None, qdrant_collection="images", text_vectors=False),
     )
     assert len(corpus["images"]) == len(index["image_ids"])
     result = engine.search("bên trong", None, "keyword", 1, entity_ids={"A"})

@@ -41,6 +41,49 @@ v3 trước khi có chế độ danh sách, so với tìm cả câu: ảnh đầ
 Cách ghép đã thử trên v3 (đích@1 / đích@10): xen kẽ nơi đầu với cả câu 11/19 (đang dùng); RRF hai danh
 sách 7/16; xen kẽ ba nơi đầu 11/18; ba nơi đầu và cả câu 11/19.
 
+## A/B nhánh vector text SigLIP2 (25/11/2026)
+
+Trạng thái: **đang xem xét**, lưu trên branch `experiment/text-retrieval-review`.
+Cấu hình đang sử dụng vẫn là hybrid hai nhánh vector ảnh + BM25; nhánh text tắt mặc định.
+
+Đã chạy lại 184 plan trong `var/list-v1/v{1,2,3}.jsonl`, mỗi cấu hình 3 vòng sau warmup,
+seed 42; không gọi OpenAI. Trong từng cặp, plan, vector ảnh, metadata, graph và mọi cấu hình khác
+đều khớp. Tắt: ảnh + BM25 (RRF 1:1). Bật: thêm text `entity_name. mo_ta` (RRF 1:1:1).
+Giữ `bridge_margin=0.1`; baseline tìm cả câu vẫn dùng hai nhánh.
+
+| Nhóm | Câu chấm | R@10 tắt → bật | nDCG@10 tắt → bật |
+|---|---:|---:|---:|
+| v1 test multi-hop | 6 | 0,833 → 1,000 | 0,750 → 0,725 |
+| v2 dev multi-hop canonical | 17 | 0,941 → 0,824 | 0,769 → 0,671 |
+| v2 dev multi-target canonical | 18 | 0,593 → 0,566 | 0,568 → 0,554 |
+| v2 test multi-hop canonical | 15 | 0,933 → 1,000 | 0,792 → 0,745 |
+| v2 test multi-target canonical | 12 | 0,727 → 0,683 | 0,666 → 0,642 |
+| v2 test single canonical | 18 | 0,792 → 0,794 | 0,894 → 0,931 |
+| v3 holdout multi-hop canonical | 24 | 0,729 → 0,729 | 0,577 → 0,553 |
+
+Trên v3, đích ở hạng 1 giảm **11/24 → 8/24**, đích trong top 10 giảm **19/24 → 18/24**.
+R@10 tính tỷ lệ ảnh đúng đã biết nên có thể không đổi dù số câu có đích trong top 10 giảm.
+
+| Bộ | p50 tắt → bật (ms) | p90 tắt → bật (ms) |
+|---|---:|---:|
+| v1 | 222,5 → 219,9 | 281,7 → 273,6 |
+| v2 | 219,6 → 233,0 | 315,5 → 319,3 |
+| v3 | 233,0 → 251,0 | 289,4 → 323,0 |
+
+Độ trễ gồm embedding + retrieval, không gồm planner/startup. Các lượt chạy tuần tự nên chênh lệch
+nhỏ không chứng minh cải thiện tốc độ. Chất lượng trung bình theo intent trong từng nhóm, chỉ chấm
+câu answerable=true; nhãn không bao phủ mọi ảnh đúng. Các bộ đã được dùng để phát triển, kết quả
+chưa chứng minh khả năng tổng quát trên dữ liệu mới.
+
+**Quyết định: giữ `IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS=false` mặc định.** Nhánh đã triển khai,
+có thể bật để thử tiếp nhưng chưa cải thiện hybrid đồng đều. Không chỉnh margin hay trọng số theo
+kết quả này. Dữ liệu chạy, gallery và bảng đầy đủ nằm ở `var/text-vectors-ab-v1/`, đặc biệt
+`comparison.md`, `comparison.json` và `v*-{off,on}/quality.json`.
+Lệnh tái lập ở [hướng dẫn tìm kiếm](../guides/search.md).
+
+Phép đo nháp SigLIP2 so với multilingual-e5 trước đó chỉ có log đến bước mã hóa ảnh, không có
+bảng kết quả. Chưa biết e5 hoặc thứ tự label ở cuối có tốt hơn; chưa thay encoder hay thêm label.
+
 ## Planner v6
 
 | Phép đo | Prompt trước | v6 |

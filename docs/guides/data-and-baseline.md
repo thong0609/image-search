@@ -51,6 +51,7 @@ liệu của phiên bản; muốn đổi thì dùng thư mục và manifest mớ
 ```bash
 uv run image-search-qdrant                   # mã hóa ảnh và nạp vào Qdrant
 uv run image-search-qdrant --sync-metadata   # chỉ nạp lại metadata, không mã hóa ảnh
+HF_HUB_OFFLINE=1 uv run image-search-qdrant --sync-text  # mã hóa tên + mô tả từng record
 uv run image-search-embedding check          # mã hóa lại ảnh mẫu, so với Qdrant
 ```
 
@@ -60,6 +61,11 @@ uv run image-search-embedding check          # mã hóa lại ảnh mẫu, so v�
   cùng tên thêm `_metadata`. Đổi model/revision/corpus phải dùng collection mới.
 - Payload giữ record nguồn, tên entity, caption, nhãn và đường dẫn ảnh. Vector chỉ lưu ở Qdrant;
   vector câu hỏi chỉ ở RAM; BM25 dựng trong RAM từ payload.
+- Nhánh text thử nghiệm dùng cùng SigLIP2, văn bản `entity_name. mo_ta`, mỗi record một vector;
+  không ghép caption của nhiều nơi. Collection `<collection>_text` và `<collection>_text_metadata`
+  giữ vector và định danh index. Snapshot hiện tại: 1.997 vector, 11 văn bản bị cắt ở 64 token.
+  Sau khi tên/mô tả hoặc model/processor đổi, cần chạy lại `--sync-text` trước khi bật nhánh này;
+  metadata không khớp sẽ báo lỗi. Các phiên bản text cũ được giữ và lọc khỏi kết quả bằng hash.
 - Dashboard <http://localhost:6333/dashboard>. Dữ liệu ở volume `images-search_qdrant-data`;
   không chạy `docker compose down -v` nếu muốn giữ.
 

@@ -119,6 +119,7 @@ def main():
                 "manifest_sha256": index["config"]["manifest_sha256"],
                 "image_index_sha256": index["index_sha256"],
                 "keyword_metadata": engine.keyword_metadata,
+                "text_metadata": engine.text_metadata,
                 "search_metadata_sha256": index["search_metadata_sha256"],
                 "aliases_sha256": file_hash(args.aliases) if args.aliases else None,
                 "startup_seconds": startup_seconds,

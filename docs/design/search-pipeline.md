@@ -22,6 +22,13 @@ flowchart LR
 | Ghép danh sách | `retrieval/listing.py` |
 | Vector, BM25, RRF | `retrieval/engine.py`, `retrieval/keyword.py` |
 
+Hybrid có công tắc `IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS`: khi bật, thêm một bảng xếp hạng từ
+vector SigLIP2 của `entity_name. mo_ta` vào RRF với trọng số bằng nhau (1:1:1, `k=60`). Mỗi record
+có vector riêng trong Qdrant; điểm ảnh là điểm cao nhất của các record hợp lệ. Khi lọc theo nơi,
+chỉ record thuộc nơi đó được tính. Label và tiêu đề trang vẫn nằm trong BM25. Không encode thêm
+câu hỏi, không thêm model. Mặc định tắt: hybrid giữ hai nhánh ảnh và BM25 (1:1).
+Kết quả A/B và giới hạn ở [đánh giá](../evaluation/results.md).
+
 ## Planner
 
 Prompt `planner-draft-scope-v6`, GPT-5 mini. Model **không** trả loại câu, bước hoặc dependency; chỉ

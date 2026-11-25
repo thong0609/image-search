@@ -11,6 +11,8 @@ class RetrievalSettings(BaseSettings):
 
     top_k: int = Field(default=100, ge=1)
     candidates: int = Field(default=100, ge=1)
+    # Thêm nhánh vector tên + mô tả vào hybrid; cần image-search-qdrant --sync-text.
+    text_vectors: bool = False
     rrf_k: int = Field(default=60, ge=1)
     # Số ảnh mỗi mục tiêu ở chế độ danh sách; số lượng trong câu không cắt danh sách.
     list_size: int = Field(default=20, ge=1, le=100)
