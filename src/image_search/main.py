@@ -9,11 +9,13 @@ from image_search.api.errors import install_errors
 from image_search.api.v1.auth import LoginLimiter
 from image_search.api.v1.auth import router as auth_router
 from image_search.api.v1.health import router
+from image_search.api.v1.library import router as library_router
 from image_search.api.v1.playground import router as playground_router
 from image_search.api.v1.search import router as search_router
 from image_search.auth.service import AuthService
 from image_search.config import Settings, configure_logging, get_settings
 from image_search.health import Readiness
+from image_search.library import Library
 from image_search.playground import PlaygroundService
 from image_search.search import SearchService
 
@@ -27,6 +29,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.search = SearchService(settings.storage_root / "thumbnails")
         app.state.playground = PlaygroundService(app.state.search)
         engine = create_database_engine(settings)
+        app.state.library = Library(engine, settings.auth_private_key)
+        app.state.search.library = app.state.library
         app.state.auth = AuthService(engine, settings)
         app.state.login_limiter = LoginLimiter()
         qdrant = create_qdrant_client(settings)
@@ -40,6 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Images-search", version="0.1.0", lifespan=lifespan)
     install_errors(app)
+    app.include_router(library_router)
     app.include_router(auth_router)
     app.include_router(router)
     app.include_router(search_router)

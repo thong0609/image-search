@@ -3,6 +3,42 @@
 Nhãn và giới hạn của từng bộ ở [benchmark](benchmarks.md). Mọi số là hybrid RRF 1:1 nếu không ghi khác;
 một lượt planner mỗi câu. Corpus 1.886 ảnh.
 
+## Pipeline trên v2 completed v1 (400 câu)
+
+Benchmark mới đủ 230 dev / 170 test; chấm 398 câu dương, 2 câu âm báo riêng.
+Hybrid vector ảnh + BM25, RRF 1:1, text tắt, list_size=20; 3 vòng sau warmup, seed 42.
+Planner v6: 263 lượt gọi mới, 137 kết quả tái sử dụng khớp text/prompt/model/reasoning;
+biên dịch lại draft bằng code hiện tại. 263 lượt mới đều hợp lệ; một lỗi plan cũ giữ lại để đo fallback.
+
+| Split / loại | Câu dương | R@10 | nDCG@10 | Đủ mục tiêu@10 |
+|---|---:|---:|---:|---:|
+| dev / single | 124 | 0,661 | 0,824 | 0,990 |
+| dev / multi-target | 74 | 0,572 | 0,562 | 0,953 |
+| dev / multi-hop | 31 | 0,870 | 0,726 | 0,870 |
+| test / single | 82 | 0,800 | 0,882 | 0,964 |
+| test / multi-target | 64 | 0,622 | 0,586 | 0,944 |
+| test / multi-hop | 23 | 0,956 | 0,810 | 0,956 |
+
+Mỗi bảng tổng theo loại lấy trung bình theo intent trên canonical + robustness, nên không phải
+trung bình tỷ lệ câu hay trung bình hai hàng canonical/robustness trong báo cáo riêng. Multi-target
+ghép các nhóm round-robin rồi chấm top 10 chung. Nhóm thị giác toàn kho dev báo riêng:
+24 câu, R@10=0,230, nDCG@10=0,661, có ảnh đúng trong top 10 ở 23/24 câu, top 20 ở 24/24.
+
+Embedding + retrieval: p50 **220 ms**, p90 **649 ms**, p95 **856 ms**; không gồm startup/planner.
+Planner mới, 4 request đồng thời: p50 7,46 s, p90 10,93 s; không coi đây là độ trễ tuần tự đầu cuối.
+Không có đơn giá trong cấu hình nên không báo chi phí ước tính.
+
+Loại kế hoạch khớp nhãn: single 206/208, multi-target 138/138, multi-hop 44/54
+(9 thành single, 1 lỗi cấu trúc). Đây chỉ là route, chưa chấm toàn bộ nội dung plan.
+Cả hai câu âm đều nhận 20 ảnh fallback; chế độ danh sách chưa từ chối khi không có tên trong kho.
+
+Artifact: `var/evaluation-v2-completed-v1/report.md`, `summary.json`, `query-scores.jsonl`,
+`route-mismatches.jsonl`, `plans.jsonl`, `retrieval/hybrid/results.html`.
+Đã kiểm tra đủ 400 prediction, 1.200 timing và hash input/code không thay đổi.
+Nhãn đã biết chưa đầy đủ, 334 câu kế thừa nhãn cũ; nhãn mới dựa trên metadata approve=yes.
+Có ảnh chung giữa dev/test, chưa có kiểm chứng độc lập. Không so trực tiếp với v2 cũ vì tập câu khác.
+Không sửa code, prompt hay nhãn theo kết quả lần chạy.
+
 ## Baseline tìm cả câu, v2 test canonical
 
 | Loại (số câu) | Phương pháp | Recall@10 | Đủ mọi mục tiêu@10 | p50 / p90 ms |

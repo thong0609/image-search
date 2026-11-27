@@ -27,8 +27,10 @@ class RetrievalEngine:
         self.graph_store = graph_store
         # Vector tên + mô tả, chỉ tham gia hybrid; None là tắt nhánh này.
         self.text_store = text_store
+        self.visible_images = None
+        self.filtered_images = None
 
-    def search(self, text, vector, method, limit, entity_ids=None):
+    def search(self, text, vector, method, limit, entity_ids=None, apply_filters=True):
         """entity_ids=None: toàn kho; tập rỗng: không có phạm vi hợp lệ."""
         if method not in ("vector", "keyword", "hybrid"):
             raise ValueError("Phương pháp không hợp lệ")
@@ -37,6 +39,11 @@ class RetrievalEngine:
             eligible = self.graph_store.images_for(entity_ids) if entity_ids else set()
             if not eligible:
                 return []
+        for allowed in (self.visible_images, self.filtered_images if apply_filters else None):
+            if allowed is not None:
+                eligible = set(allowed) if eligible is None else eligible & allowed
+        if eligible is not None and not eligible:
+            return []
         dense, sparse = [], []
         count = max(limit, self.settings.candidates) if method == "hybrid" else limit
         if method != "keyword":

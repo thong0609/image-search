@@ -451,3 +451,14 @@ def test_graph_confirmed_place_wins_only_within_margin(engine, monkeypatch, scor
     engine.graph_store = FakeGraph(engine.catalog, scope=["a", "b"], confirmed=["b"])
     result = engine.execute(bridge_plan(graph=relation_query()), "keyword")
     assert result["trace"][0]["entity_ids"] == [winner]
+
+
+@pytest.mark.parametrize("method", ["vector", "keyword", "hybrid"])
+def test_website_filters_apply_before_ranking_and_never_reintroduce_deleted(engine, method):
+    engine.visible_images = {"ag", "ai", "bg", "bi"}
+    engine.filtered_images = {"bi", "other"}
+    found = engine.search("bên trong", np.array([0, 1]), method, 1)
+    assert [r["image_id"] for r in found] == ["bi"]
+    evidence = engine.search("bên trong", np.array([0, 1]), method, 10, apply_filters=False)
+    assert "ai" in {r["image_id"] for r in evidence}
+    assert "other" not in {r["image_id"] for r in evidence}
