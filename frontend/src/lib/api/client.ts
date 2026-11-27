@@ -24,6 +24,7 @@ export function setAccessToken(value: string | null) {
 type ApiPath = `/v1/${string}` | `/health/${string}`;
 type RequestOptions = Omit<RequestInit, "body"> & {
   json?: unknown;
+  form?: FormData;
 };
 
 export async function apiRequest<T>(
@@ -39,7 +40,7 @@ export async function apiRequest<T>(
   ) {
     throw new Error("Invalid API path");
   }
-  const { json, ...init } = options;
+  const { json, form, ...init } = options;
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
@@ -47,7 +48,7 @@ export async function apiRequest<T>(
   const response = await fetch(path, {
     ...init,
     headers,
-    body: json === undefined ? undefined : JSON.stringify(json),
+    body: form ?? (json === undefined ? undefined : JSON.stringify(json)),
     credentials: "same-origin",
     cache: "no-store",
   });
@@ -69,7 +70,7 @@ export async function apiRequest<T>(
           ...Object.fromEntries(headers),
           Authorization: `Bearer ${accessToken}`,
         },
-        body: json === undefined ? undefined : JSON.stringify(json),
+        body: form ?? (json === undefined ? undefined : JSON.stringify(json)),
         credentials: "same-origin",
         cache: "no-store",
       });

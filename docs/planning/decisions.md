@@ -35,6 +35,11 @@ Cập nhật sau baseline v2: dùng dataset CSV hiện có, đã chốt baseline
 | C27 | Kiểu Google Images: luôn trả danh sách ảnh, không từ chối; không khớp thì tìm cả câu; multi-target tạm giữ nhóm; số ảnh trong câu không cắt danh sách | Người dùng ngày 25/11/2026 |
 | C28 | Làm trước một màn hình demo tìm ảnh, lấy ý tưởng Google Images; chưa cần vai trò admin. Tối ưu độ trễ planner (mốc p90 ≤ 300 ms) tạm gác | Người dùng ngày 25/11/2026 |
 
+Cập nhật 26/11/2026: người dùng yêu cầu triển khai website/backend/frontend theo kế hoạch; phần
+“chưa cần admin” của C28 không còn áp dụng cho đợt triển khai này. Người dùng đã duyệt access JWT
+15 phút, refresh family 7 ngày, admin cấp tài khoản, tạo admin đầu tiên bằng CLI; local HTTP và cookie
+Secure khi chạy HTTPS. Luồng tìm kiếm vẫn dùng hybrid hai nhánh; chưa bật reranker hoặc vector text.
+
 ## 2. ADR và trạng thái
 
 ADR03 đã chốt ở mức lựa chọn Qdrant và tách DB; FastAPI/PostgreSQL đã chốt C16; schema payload và đồng bộ chi tiết vẫn cần kiểm chứng. ADR13/ADR14 đã chốt vai trò graph/VLM theo C12; Neo4j đã chọn cho graph nền C20; quan hệ nghiệp vụ, checkpoint VLM và cấu hình còn lại chưa chốt. Chi tiết ở [thiết kế Qdrant](../design/data-model.md#qdrant).
@@ -115,3 +120,8 @@ Các câu hỏi còn mở trên là đầu vào thiết kế tiếp theo; không
 Lịch sử C13/ADR15: thiết kế tách source/family/generation/projection/import/item/delivery/search-item thành bảng riêng được superseded bởi schema 9 bảng. Không có migration thực tế. Family và projection vẫn là khái niệm nghiệp vụ, được lưu qua root row/index_state; jobs tạo cùng transaction catalog giữ transactional outbox. ADR10 đổi từ reindex có catch-up sang maintenance runbook; auth vẫn giữ rotation/reuse detection và access revocation sau commit.
 
 Baseline v2 đã hoàn thành code và đánh giá sơ bộ. Không áp dụng kế hoạch địa danh/Commons/Wikidata cũ; dữ liệu hiện tại và giới hạn nhãn được ghi trong [tài liệu benchmark](../evaluation/benchmarks.md).
+
+Cập nhật 27/11/2026: người dùng duyệt nhập CSV theo định dạng dataset hiện có, xem trước lỗi,
+worker xử lý batch, tiến độ/retry và công bố ảnh mới. Khóa record theo entity_id + image_url;
+không tự tạo quan hệ graph cho entity mới hoặc gọi extraction API. Triển khai local tạo collection
+snapshot mới bằng vector cũ trong RAM và embedding mới trong Qdrant; chưa kiểm chứng scale lớn.

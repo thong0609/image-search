@@ -25,6 +25,7 @@ export function AdminScreen() {
       <nav className="flex gap-5 border-b pb-4">
         <Link href="/admin">Tài khoản</Link>
         <Link href="/admin/images">Kho ảnh</Link>
+        <Link href="/admin/imports">Nhập CSV</Link>
       </nav>
       <Users />
     </main>
