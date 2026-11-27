@@ -14,13 +14,13 @@ class Probe:
 
 
 def test_liveness_works_without_running_dependencies(tmp_path):
-    app = create_app(Settings(storage_root=tmp_path))
+    app = create_app(Settings(storage_root=tmp_path, preload_search=False))
     with TestClient(app) as client:
         assert client.get("/health/live").json() == {"status": "alive"}
 
 
 def test_readiness_reports_unavailable_without_exposing_credentials(tmp_path):
-    app = create_app(Settings(storage_root=tmp_path))
+    app = create_app(Settings(storage_root=tmp_path, preload_search=False))
     app.dependency_overrides[get_readiness] = lambda: Probe(False)
     with TestClient(app) as client:
         response = client.get("/health/ready")
@@ -30,7 +30,7 @@ def test_readiness_reports_unavailable_without_exposing_credentials(tmp_path):
 
 
 def test_readiness_succeeds_when_all_probes_succeed(tmp_path):
-    app = create_app(Settings(storage_root=tmp_path))
+    app = create_app(Settings(storage_root=tmp_path, preload_search=False))
     app.dependency_overrides[get_readiness] = lambda: Probe(True)
     with TestClient(app) as client:
         assert client.get("/health/ready").status_code == 200

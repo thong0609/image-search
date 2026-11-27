@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import "./globals.css";
+import { ServerPreparation } from "@/features/server/server-preparation";
 import { AuthProvider, AccountNav } from "@/features/auth/auth-provider";
 export const metadata: Metadata = {
   title: "Tìm ảnh",
@@ -12,10 +13,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="vi">
       <body>
         <QueryProvider>
-          <AuthProvider>
-            <AccountNav />
-            {children}
-          </AuthProvider>
+          <ServerPreparation>
+            <AuthProvider>
+              <AccountNav />
+              {children}
+            </AuthProvider>
+          </ServerPreparation>
         </QueryProvider>
       </body>
     </html>

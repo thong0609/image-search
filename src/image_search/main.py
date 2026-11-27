@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -18,6 +19,7 @@ from image_search.config import Settings, configure_logging, get_settings
 from image_search.health import Readiness
 from image_search.library import Library
 from image_search.playground import PlaygroundService
+from image_search.preparation import SearchPreparation
 from image_search.search import SearchService
 
 
@@ -36,9 +38,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.login_limiter = LoginLimiter()
         qdrant = create_qdrant_client(settings)
         app.state.readiness = Readiness(engine, qdrant, LocalObjectStorage(settings.storage_root))
+        app.state.preparation = SearchPreparation(app.state.search, settings.preload_search)
         try:
             yield
         finally:
+            await asyncio.to_thread(app.state.preparation.close)
             app.state.search.close()
             qdrant.close()
             engine.dispose()

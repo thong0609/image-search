@@ -81,6 +81,12 @@ class SearchResponse(BaseModel):
 
 
 def get_search(request: Request):
+    if request.app.state.preparation.status != "ready":
+        raise HTTPException(
+            503,
+            {"code": "SEARCH_PREPARING", "message": "Tìm kiếm chưa sẵn sàng."},
+            headers={"Retry-After": "1"},
+        )
     return request.app.state.search
 
 
