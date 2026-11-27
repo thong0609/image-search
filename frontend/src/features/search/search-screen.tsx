@@ -3,11 +3,13 @@
 import { useCallback, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { apiRequest, ApiError } from "@/lib/api/client";
+import { apiRequest, ApiError, getSearchOwner } from "@/lib/api/client";
 import { GridSkeleton, ImageGrid } from "./image-grid";
 import { ImagePanel } from "./image-panel";
+import { SearchFilters, filtersFromParams } from "./search-filters";
+import { useAuth } from "@/features/auth/auth-provider";
 import { SearchBox } from "./search-box";
 import type { SearchResponse } from "./types";
 
@@ -19,7 +21,7 @@ const EXAMPLES = [
 
 function errorMessage(error: unknown) {
   if (error instanceof ApiError && error.status === 503)
-    return "Tìm kiếm chưa sẵn sàng. Kiểm tra backend, Qdrant và Neo4j rồi thử lại.";
+    return "Tìm kiếm đang tạm gián đoạn. Vui lòng thử lại sau.";
   if (error instanceof ApiError && error.status === 422)
     return "Câu tìm kiếm không hợp lệ hoặc dài quá 500 ký tự.";
   return "Không kết nối được máy chủ. Vui lòng thử lại.";
@@ -42,7 +44,8 @@ function Brand({ large = false }: { large?: boolean }) {
 
 export function SearchScreen() {
   const router = useRouter();
-  const query = (useSearchParams().get("q") ?? "").trim();
+  const params = useSearchParams();
+  const query = (params.get("q") ?? "").trim();
   const search = useCallback(
     (text: string) => router.push(`/?q=${encodeURIComponent(text)}`),
     [router],
@@ -50,7 +53,9 @@ export function SearchScreen() {
 
   if (!query) return <Landing onSearch={search} />;
   // key: câu mới thì bỏ ảnh đang chọn và đồng bộ lại ô tìm kiếm.
-  return <Results key={query} query={query} onSearch={search} />;
+  return (
+    <Results key={query + params.toString()} query={query} onSearch={search} />
+  );
 }
 
 function Landing({ onSearch }: { onSearch: (query: string) => void }) {
@@ -81,41 +86,66 @@ function Landing({ onSearch }: { onSearch: (query: string) => void }) {
 type ResultsProps = { query: string; onSearch: (query: string) => void };
 
 function Results({ query, onSearch }: ResultsProps) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const { data, error, isFetching, refetch } = useQuery({
-    queryKey: ["search", query],
-    queryFn: ({ signal }) =>
+  const { user } = useAuth();
+  const router = useRouter();
+  const params = useSearchParams();
+  const [selected, setSelected] = useState<string | null>(params.get("image"));
+  const selectImage = (key: string) => {
+    if (!user) {
+      const target = `/?${params.toString()}&image=${encodeURIComponent(key)}`;
+      router.push(`/login?returnTo=${encodeURIComponent(target)}`);
+    } else setSelected(key);
+  };
+  const filters = filtersFromParams(params);
+  const [owner] = useState(getSearchOwner);
+  const {
+    data: pages,
+    error,
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: ["search", query, filters, owner],
+    initialPageParam: null as string | null,
+    queryFn: ({ signal, pageParam }) =>
       apiRequest<SearchResponse>("/v1/search", {
         method: "POST",
-        json: { query },
+        json: pageParam
+          ? { cursor: pageParam, limit: 10 }
+          : { query, filters, limit: 10 },
+        headers: { "X-Search-Owner": owner },
         signal,
       }),
-    // Mỗi lượt tìm gọi planner có phí: quay lại câu cũ thì dùng lại kết quả.
-    staleTime: Infinity,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    staleTime: 10 * 60 * 1000,
   });
-
-  const groups = data?.groups ?? [];
+  const data = pages?.pages[0];
+  const groups = (data?.groups ?? []).map((group) => ({
+    ...group,
+    items: pages!.pages.flatMap(
+      (page) => page.groups.find((g) => g.id === group.id)?.items ?? [],
+    ),
+  }));
   const items = groups.flatMap((group) =>
     group.items.map((item) => ({ key: `${group.id}:${item.id}`, item })),
   );
   const current = items.findIndex((entry) => entry.key === selected);
 
-  const close = useCallback(() => {
+  const close = () => {
     setSelected(null);
     if (current >= 0)
       document.getElementById(`result-${items[current].key}`)?.focus();
-  }, [current, items]);
-  const move = useCallback(
-    (step: 1 | -1) => {
-      const next = items[current + step];
-      if (!next) return;
-      setSelected(next.key);
-      document
-        .getElementById(`result-${next.key}`)
-        ?.scrollIntoView({ block: "nearest" });
-    },
-    [current, items],
-  );
+  };
+  const move = (step: 1 | -1) => {
+    const next = items[current + step];
+    if (!next) return;
+    setSelected(next.key);
+    document
+      .getElementById(`result-${next.key}`)
+      ?.scrollIntoView({ block: "nearest" });
+  };
 
   return (
     <>
@@ -125,6 +155,7 @@ function Results({ query, onSearch }: ResultsProps) {
           <SearchBox initial={query} onSearch={onSearch} />
         </div>
       </header>
+      <SearchFilters />
       <div className="flex items-start gap-5 px-4 py-4 sm:px-6">
         <main className="min-w-0 flex-1" aria-busy={isFetching}>
           <div role="status" className="sr-only">
@@ -132,7 +163,7 @@ function Results({ query, onSearch }: ResultsProps) {
               ? "Đang tìm ảnh"
               : data && `Tìm thấy ${items.length} ảnh`}
           </div>
-          {isFetching ? (
+          {isFetching && !isFetchingNextPage ? (
             <>
               <p className="mb-4 text-sm text-muted-foreground">
                 Đang phân tích câu hỏi và tìm ảnh, có thể mất hơn 10 giây…
@@ -170,14 +201,31 @@ function Results({ query, onSearch }: ResultsProps) {
                     group={group.id}
                     items={group.items}
                     selected={selected}
-                    onSelect={setSelected}
+                    onSelect={selectImage}
                   />
                 </section>
               ))}
             </div>
           )}
+          {items.length > 0 && (
+            <div className="py-8 text-center">
+              {hasNextPage ? (
+                <Button
+                  variant="outline"
+                  disabled={isFetchingNextPage}
+                  onClick={() => fetchNextPage()}
+                >
+                  {isFetchingNextPage ? "Đang tải…" : "Xem thêm ảnh"}
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Đã hết kết quả của lượt tìm này.
+                </p>
+              )}
+            </div>
+          )}
         </main>
-        {current >= 0 && (
+        {user && current >= 0 && (
           <ImagePanel
             item={items[current].item}
             onClose={close}

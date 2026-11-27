@@ -12,6 +12,7 @@ import {
   Search,
   Workflow,
 } from "lucide-react";
+import { useAuth } from "@/features/auth/auth-provider";
 import { apiRequest, ApiError } from "@/lib/api/client";
 import type { RunResult, Step } from "./types";
 import "./playground.css";
@@ -111,6 +112,22 @@ function StepCard({ step, index }: { step: Step; index: number }) {
 }
 
 export function Playground() {
+  const { user, ready } = useAuth();
+  if (!ready) return <p className="p-8">Đang kiểm tra tài khoản…</p>;
+  if (!user)
+    return (
+      <p className="p-8">
+        <Link href="/login?returnTo=/playground">
+          Đăng nhập để mở playground
+        </Link>
+      </p>
+    );
+  if (user.role !== "admin")
+    return <p className="p-8">Công cụ này dành cho quản trị viên.</p>;
+  return <PlaygroundForm />;
+}
+
+function PlaygroundForm() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"planner" | "search">("planner");
   const [method, setMethod] = useState("hybrid");

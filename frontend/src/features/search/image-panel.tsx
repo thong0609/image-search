@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ExternalLink, X } from "lucide-react";
+import { mediaRequest } from "@/lib/api/client";
+import { authMessage } from "@/features/auth/auth-provider";
 import type { SearchItem } from "./types";
 
 type Props = {
@@ -15,6 +17,45 @@ const iconButton =
 
 export function ImagePanel({ item, onClose, onMove }: Props) {
   const close = useRef<HTMLButtonElement>(null);
+  const [preview, setPreview] = useState<{ id: string; url: string } | null>(
+    null,
+  );
+  const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    let url = "";
+    mediaRequest(`/v1/images/${item.id}/preview`)
+      .then((blob) => {
+        if (cancelled) return;
+        url = URL.createObjectURL(blob);
+        setPreview({ id: item.id, url });
+      })
+      .catch((error) => {
+        if (!cancelled) setError(authMessage(error));
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [item.id]);
+  async function download() {
+    setDownloading(true);
+    setError("");
+    try {
+      const blob = await mediaRequest(`/v1/images/${item.id}/download`, "POST");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${item.id}.${blob.type.split("/")[1] || "jpg"}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setError(authMessage(error));
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   // Chỉ đưa focus vào panel khi mở, không giật lại khi chuyển ảnh.
   useEffect(() => close.current?.focus({ preventScroll: true }), []);
@@ -70,7 +111,11 @@ export function ImagePanel({ item, onClose, onMove }: Props) {
         {/* eslint-disable-next-line @next/next/no-img-element -- ảnh gốc do backend phục vụ */}
         <img
           key={item.id}
-          src={`/v1/images/${item.id}`}
+          src={
+            preview?.id === item.id
+              ? preview.url
+              : `/v1/images/${item.id}/thumbnail`
+          }
           alt={item.caption || item.title}
           style={{
             backgroundImage: `url(/v1/images/${item.id}/thumbnail)`,
@@ -79,6 +124,18 @@ export function ImagePanel({ item, onClose, onMove }: Props) {
         />
       </div>
       <div className="space-y-4 p-5">
+        {error && (
+          <p role="alert" className="text-red-700">
+            {error}
+          </p>
+        )}
+        <button
+          className="rounded-full bg-primary px-5 py-2 text-primary-foreground disabled:opacity-50"
+          onClick={download}
+          disabled={downloading}
+        >
+          {downloading ? "Đang tải…" : "Tải ảnh"}
+        </button>
         <h2 className="text-xl">{item.title}</h2>
         {item.caption && <p className="leading-relaxed">{item.caption}</p>}
         {item.width && item.height && (
@@ -86,7 +143,7 @@ export function ImagePanel({ item, onClose, onMove }: Props) {
             {item.width} × {item.height}
           </p>
         )}
-        {item.source_url && (
+        {item.source_url && /^https?:\/\//i.test(item.source_url) && (
           <a
             href={item.source_url}
             target="_blank"
