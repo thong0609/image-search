@@ -9,6 +9,7 @@ from image_search.api.errors import install_errors
 from image_search.api.v1.auth import LoginLimiter
 from image_search.api.v1.auth import router as auth_router
 from image_search.api.v1.health import router
+from image_search.api.v1.imports import router as imports_router
 from image_search.api.v1.library import router as library_router
 from image_search.api.v1.playground import router as playground_router
 from image_search.api.v1.search import router as search_router
@@ -44,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Images-search", version="0.1.0", lifespan=lifespan)
     install_errors(app)
+    app.include_router(imports_router)
     app.include_router(library_router)
     app.include_router(auth_router)
     app.include_router(router)
