@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from image_search.api.v1.auth import current_user
 from image_search.api.v1.search import get_search
 from image_search.config import Settings
 from image_search.main import create_app
@@ -100,10 +101,12 @@ def test_only_corpus_images_are_served_and_thumbnails_are_bounded(client, servic
     source = tmp_path / "big.png"
     Image.new("RGBA", (2000, 1000), "red").save(source)
     service.images = {"known": source, "gone": tmp_path / "gone.png"}
+    client.app.dependency_overrides[current_user] = lambda: {"role": "user"}
+    service.load = Mock()
     for path in ("unknown", "gone", "..%2F..%2Fetc%2Fpasswd"):
-        assert client.get(f"/v1/images/{path}").status_code == 404
+        assert client.get(f"/v1/images/{path}/preview").status_code == 404
         assert client.get(f"/v1/images/{path}/thumbnail").status_code == 404
-    assert client.get("/v1/images/known").content == source.read_bytes()
+    assert client.get("/v1/images/known/preview").content == source.read_bytes()
     response = client.get("/v1/images/known/thumbnail")
     assert response.headers["content-type"] == "image/jpeg"
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -122,3 +125,29 @@ def test_close_releases_every_client(tmp_path):
     service.encoder.vector_store.client.close.assert_called_once()
     service.engine.vector_store.client.close.assert_called_once()
     service.engine.graph_store.driver.close.assert_called_once()
+
+
+def test_original_media_requires_login(client):
+    for path in ("/v1/images/a", "/v1/images/a/preview"):
+        assert client.get(path).status_code == 401
+    assert client.post("/v1/images/a/download").status_code == 401
+
+
+def test_filter_validation_before_planner(client, service):
+    for filters in (
+        {"orientation": "diagonal"},
+        {"min_width": 0},
+        {"collection_ids": []},
+        {"min_height": True},
+    ):
+        assert (
+            client.post("/v1/search", json={"query": "chợ", "filters": filters}).status_code == 422
+        )
+    service.plan.assert_not_called()
+
+
+def test_dimension_filters_exclude_unknown_sizes(service):
+    service.images = {"a": None, "c": None}
+    service.engine.catalog.records["a"][0].update(actual_width=1200, actual_height=800)
+    assert service.matching_images({"orientation": "landscape", "min_width": 1000}) == {"a"}
+    assert service.matching_images({"orientation": "portrait"}) == set()

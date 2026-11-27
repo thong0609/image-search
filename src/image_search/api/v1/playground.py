@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from image_search.api.v1.auth import Admin
+
 router = APIRouter(prefix="/v1/playground", tags=["playground"])
 
 
@@ -20,7 +22,9 @@ def get_playground(request: Request):
 
 
 @router.post("/run")
-def run_query(query: PlaygroundQuery, service: Annotated[Any, Depends(get_playground)]):
+def run_query(
+    query: PlaygroundQuery, admin: Admin, service: Annotated[Any, Depends(get_playground)]
+):
     from image_search.playground import PlaygroundBusy
 
     try:

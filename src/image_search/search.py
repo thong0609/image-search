@@ -1,5 +1,6 @@
 """Tìm ảnh cho giao diện: giữ engine/encoder dùng chung, phục vụ ảnh trong corpus."""
 
+import copy
 import logging
 import os
 import tempfile
@@ -24,6 +25,8 @@ class SearchService:
         self.engine = None
         self.encoder = None
         self.images = {}
+        self.library = None
+        self.index = None
         self.plans = PlanCache(PlannerSettings().cache_size)
 
     def load(self, needs_encoder=True):
@@ -33,12 +36,39 @@ class SearchService:
         from image_search.retrieval.settings import RetrievalSettings
 
         embedding = EmbeddingSettings()
+        retrieval = RetrievalSettings()
+        graph_settings = None
+        active = None
+        if self.library is not None:
+            from image_search.graph.settings import GraphSettings
+
+            with self.library.engine.connect() as conn:
+                active = self.library.active_config(conn)
+            collection = active["vector_index"].get("collection", retrieval.qdrant_collection)
+            retrieval = retrieval.model_copy(update={"qdrant_collection": collection})
+            graph_settings = GraphSettings().model_copy(
+                update={
+                    "dataset_id": active["graph_config"].get(
+                        "dataset_id", GraphSettings().dataset_id
+                    )
+                }
+            )
+            if self.engine is not None and self.engine.vector_store.collection != collection:
+                self.engine.vector_store.client.close()
+                self.engine.graph_store.driver.close()
+                self.engine = None
+                if self.encoder is not None:
+                    self.encoder.vector_store.client.close()
+                    self.encoder = None
         if self.engine is None:
-            engine, corpus, _ = load_engine(embedding, RetrievalSettings())
+            engine, corpus, index = load_engine(embedding, retrieval, graph_settings=graph_settings)
             self.engine = engine
+            self.index = index
             self.images = {r["image_id"]: Path(r["local_path"]) for r in corpus["images"]}
+        if self.library is not None:
+            self.library.validate_index(self.index)
         if needs_encoder and self.encoder is None:
-            self.encoder = Siglip2Embedding(embedding)
+            self.encoder = Siglip2Embedding(embedding, collection=retrieval.qdrant_collection)
 
     def plan(self, text):
         """(Kế hoạch hoặc None nếu planner không dùng được, có lấy từ cache không)."""
@@ -62,22 +92,58 @@ class SearchService:
             logging.getLogger(__name__).warning("Planner unavailable: %s", type(error).__name__)
             return None, False
 
-    def retrieve(self, text, plan, method="hybrid"):
+    def retrieve(self, text, plan, method="hybrid", filters=None):
         from image_search.retrieval.listing import search_list
 
         with self.lock:
             self.load(method != "keyword")
-            return search_list(self.engine, self.encoder, text, plan, method)
+            engine = copy.copy(self.engine)
+            if self.library is not None:
+                engine.visible_images = self.library.visible()
+            if filters:
+                engine.filtered_images = self.matching_images(filters)
+            return search_list(engine, self.encoder, text, plan, method)
 
     def records_for(self, image_id, scope):
         """Record thuộc nơi chứa; ảnh từ câu tìm chung có thể nằm ngoài phạm vi đó."""
         records = self.engine.catalog.records[image_id]
         return [r for r in records if r["entity_id"] in scope] or records
 
-    def search(self, text):
+    def matching_images(self, filters):
+        allowed = (
+            self.library.visible(filters["collection_ids"])
+            if self.library and filters.get("collection_ids")
+            else set(self.images)
+        )
+        result = set()
+        for iid in allowed:
+            rows = self.engine.catalog.records.get(iid, [])
+            if not rows:
+                continue
+            row = rows[0]
+            width, height = row.get("actual_width"), row.get("actual_height")
+            if filters.get("min_width") and (not width or width < filters["min_width"]):
+                continue
+            if filters.get("min_height") and (not height or height < filters["min_height"]):
+                continue
+            orientation = filters.get("orientation")
+            if orientation:
+                if not width or not height:
+                    continue
+                actual = (
+                    "landscape" if width > height else "portrait" if height > width else "square"
+                )
+                if actual != orientation:
+                    continue
+            result.add(iid)
+        return result
+
+    def search(self, text, filters=None):
         started = time.perf_counter()
         plan, cached = self.plan(text)
-        result = self.retrieve(text, plan)
+        result = (
+            self.retrieve(text, plan, filters=filters) if filters else self.retrieve(text, plan)
+        )
         groups = []
         for group in result["groups"]:
             scope = set(group.get("entity_scope") or [])
@@ -87,6 +153,7 @@ class SearchService:
                 items.append(
                     {
                         "id": row["image_id"],
+                        "record_id": record.get("record_id"),
                         "title": record["entity_name"],
                         "caption": record.get("mo_ta") or "",
                         "width": record.get("actual_width"),
@@ -113,6 +180,8 @@ class SearchService:
         }
 
     def image_path(self, image_id):
+        if self.library is not None:
+            self.library.require_visible(image_id)
         path = self.images.get(image_id)
         return path if path is not None and path.is_file() else None
 

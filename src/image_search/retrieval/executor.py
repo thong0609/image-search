@@ -110,6 +110,7 @@ class PlanExecutor:
             method,
             self.settings.top_k,
             entity_ids=None if scope is None else self.graph.source_ids(scope),
+            apply_filters=False,
         )
         links = self.graph.entity_links({r["image_id"] for r in found})
         ranked = {}

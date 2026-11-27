@@ -19,8 +19,8 @@ def create_graph_driver(settings):
         raise
 
 
-def load_graph(index, payloads):
-    settings = GraphSettings()
+def load_graph(index, payloads, settings=None):
+    settings = settings or GraphSettings()
     driver = create_graph_driver(settings)
     graph = GraphStore(driver, settings, index["search_metadata_sha256"])
     try:

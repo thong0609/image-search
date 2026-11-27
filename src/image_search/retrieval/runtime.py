@@ -9,7 +9,7 @@ from image_search.retrieval.engine import RetrievalEngine
 from image_search.retrieval.keyword import build_keyword_index
 
 
-def load_engine(embedding_settings, settings, aliases=None):
+def load_engine(embedding_settings, settings, aliases=None, graph_settings=None):
     corpus, index, store = load_index(collection=settings.qdrant_collection)
     baseline = get_baseline_settings()
     records = [r for payload in store.payloads.values() for r in payload["records"]]
@@ -21,7 +21,11 @@ def load_engine(embedding_settings, settings, aliases=None):
         text_store, text_metadata = None, None
         if settings.text_vectors:
             text_store, text_metadata = load_text_store(store, index)
-        graph = load_graph(index, store.payloads)
+        graph = (
+            load_graph(index, store.payloads, graph_settings)
+            if graph_settings
+            else load_graph(index, store.payloads)
+        )
         catalog = Catalog(records, index["image_ids"], aliases)
         engine = RetrievalEngine(
             index["image_ids"], store, keyword, catalog, settings, graph, text_store

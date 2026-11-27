@@ -3,6 +3,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+from image_search.api.v1.auth import admin_user
 from image_search.api.v1.playground import get_playground
 from image_search.config import Settings
 from image_search.main import create_app
@@ -14,6 +15,7 @@ from image_search.search import SearchService
 def api(tmp_path):
     app = create_app(Settings(storage_root=tmp_path))
     service = Mock()
+    app.dependency_overrides[admin_user] = lambda: {"role": "admin"}
     app.dependency_overrides[get_playground] = lambda: service
     with TestClient(app) as client:
         yield client, service

@@ -14,7 +14,7 @@ from image_search.config import Settings
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["init-key", "create-admin"])
+    parser.add_argument("command", choices=["init-key", "create-admin", "sync-catalog"])
     parser.add_argument("--email")
     parser.add_argument("--name", default="Quản trị viên")
     args = parser.parse_args()
@@ -32,6 +32,21 @@ def main():
                 )
             )
         print("Đã tạo khóa. Giữ khóa ngoài Git và sao lưu ở nơi riêng tư.")
+        return
+    if args.command == "sync-catalog":
+        from image_search.embedding.index import load_index
+        from image_search.library import Library
+
+        engine = create_database_engine(settings)
+        store = None
+        try:
+            _, index, store = load_index()
+            count = Library(engine, settings.auth_private_key).bootstrap(index)
+            print(f"Đã đăng ký {count} ảnh từ Qdrant cho website.")
+        finally:
+            if store is not None:
+                store.client.close()
+            engine.dispose()
         return
     if not args.email or "@" not in args.email:
         parser.error("Cần --email hợp lệ")

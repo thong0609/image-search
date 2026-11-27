@@ -12,10 +12,12 @@ from image_search.embedding.index import load_index
 
 
 class Siglip2Embedding:
-    def __init__(self, settings):
+    def __init__(self, settings, collection=None):
         self.settings = settings
         started = time.perf_counter()
-        self.corpus, self.index, self.vector_store = load_index()
+        self.corpus, self.index, self.vector_store = (
+            load_index(collection=collection) if collection else load_index()
+        )
         self.index_check_seconds = time.perf_counter() - started
         config = self.index["config"]
         started = time.perf_counter()
