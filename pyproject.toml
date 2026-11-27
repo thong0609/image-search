@@ -16,6 +16,7 @@ dependencies = [
     "neo4j>=6,<7",
     "pyjwt[crypto]>=2.10,<3",
     "argon2-cffi>=23,<26",
+    "python-multipart>=0.0.20,<1",
 ]
 [project.optional-dependencies]
 planner = ["openai>=2,<3"]
