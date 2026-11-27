@@ -14,6 +14,8 @@ dependencies = [
     "pillow>=11,<13",
     "httpx>=0.28,<1",
     "neo4j>=6,<7",
+    "pyjwt[crypto]>=2.10,<3",
+    "argon2-cffi>=23,<26",
 ]
 [project.optional-dependencies]
 planner = ["openai>=2,<3"]
@@ -26,6 +28,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/image_search"]
 [project.scripts]
+image-search-admin = "image_search.auth.cli:main"
 image-search-graph = "image_search.graph.cli:main"
 image-search-qdrant = "image_search.adapters.qdrant.import_vectors:main"
 image-search-worker = "image_search.worker:main"
