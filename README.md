@@ -4,7 +4,8 @@ Tìm ảnh bằng câu tiếng Việt trên kho riêng (1.886 ảnh có metadata
 tiêu và nơi chứa, xác định nơi chứa qua Neo4j hoặc qua ảnh khác, rồi tìm bằng vector SigLIP2 + BM25 gộp
 RRF. Kết quả luôn là danh sách ảnh cho từng mục tiêu.
 
-Trạng thái: luồng tìm kiếm và màn hình tìm ảnh local đã chạy; reranking, đăng nhập và quản trị chưa có.
+Trạng thái: đã có tìm kiếm, đăng nhập, quản trị tài khoản/kho ảnh và nhập CSV theo batch.
+Reranking chưa triển khai.
 Xem [lộ trình](docs/planning/delivery-plan.md) và [kết quả đo](docs/evaluation/results.md).
 
 ## Cài đặt
@@ -14,16 +15,16 @@ Cần Python 3.12, uv, Docker Compose v2. Frontend cần Node 24.22.2 (`frontend
 ```bash
 cp .env.example .env            # đổi mật khẩu, thêm OPENAI_API_KEY
 uv sync --frozen --extra baseline --extra planner
-docker compose --profile graph up -d qdrant neo4j
+docker compose --profile graph up -d postgres qdrant neo4j
 ```
 
-`.env`: `IMAGE_SEARCH_GRAPH_PASSWORD` cho Neo4j; nếu dùng PostgreSQL thì `POSTGRES_PASSWORD` phải khớp
+`.env`: `IMAGE_SEARCH_GRAPH_PASSWORD` cho Neo4j;  `POSTGRES_PASSWORD` phải khớp
 `IMAGE_SEARCH_DATABASE_URL`. Mọi dịch vụ chỉ bind localhost; không commit `.env`.
 
 ## Chạy
 
 1. [Chuẩn bị dữ liệu và index](docs/guides/data-and-baseline.md).
-2. [Nhập graph](docs/guides/graph.md).
+2. [Nhập graph](docs/guides/graph.md), rồi [khởi tạo tài khoản và catalog website](docs/guides/website.md).
 3. [Tìm kiếm và đánh giá](docs/guides/search.md).
 
 Màn hình tìm ảnh ở `/`, công cụ xem từng bước ở `/playground`:
@@ -46,7 +47,9 @@ src/image_search/
   graph/                          dựng graph quan hệ từ metadata
   baseline/                       dữ liệu, nhãn, baseline tìm cả câu
   adapters/                       Qdrant, Neo4j, PostgreSQL, object storage
-  worker.py, smoke.py             scaffold cho giai đoạn sau
+  ingestion/, worker.py           nhập CSV, embedding batch và công bố snapshot
+  auth/                           xác thực, tài khoản và CLI quản trị
+  smoke.py                        kiểm tra stack local
 scripts/                          đánh giá retrieval và route planner
 migrations/                       schema PostgreSQL (Alembic)
 frontend/                         Next.js: màn hình tìm ảnh và playground
@@ -55,8 +58,8 @@ docs/                             hướng dẫn, thiết kế, đánh giá, k�
 data/, var/                       dữ liệu và artifact local, ngoài Git
 ```
 
-PostgreSQL, migration, worker và object storage là scaffold cho website; luồng tìm kiếm và giao diện
-không cần chúng:
+Website cần PostgreSQL cho đăng nhập, trạng thái ảnh và phân trang.
+Xem [khởi tạo website và chạy worker CSV](docs/guides/website.md):
 
 ```bash
 docker compose up -d && uv run alembic upgrade head

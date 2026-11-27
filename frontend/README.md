@@ -11,6 +11,11 @@ npm run lint && npm run typecheck && npm run format:check && npm run build
 
 - `src/features/search/`: màn hình tìm ảnh (`/`): ô tìm kiếm, lưới ảnh, panel chi tiết.
 - `src/features/playground/`: xem kế hoạch và từng bước (`/playground`), CSS riêng.
-- `src/lib/api/client.ts`: gọi API cùng origin, không tự thử lại. `src/components/ui/`: UI dùng chung.
+- `src/lib/api/client.ts`: gọi API cùng origin; refresh một lần khi access token hết hạn. `src/components/ui/`: UI dùng chung.
 - Next proxy `/v1/*` và `/health/*` tới backend, timeout 180 giây. Không đặt khóa hoặc mật khẩu trong
   `NEXT_PUBLIC_*`.
+
+Website hiện có `/login`, `/account`, `/admin`, `/admin/images`, `/admin/imports`; `/playground` cần admin.
+Backend phải migrate PostgreSQL, khởi tạo khóa, đồng bộ catalog và tạo admin trước khi đăng nhập.
+Xem [hướng dẫn website](../docs/guides/website.md). Access token chỉ giữ trong memory;
+refresh cookie HttpOnly, các thao tác ảnh gốc dùng bearer token qua proxy backend.

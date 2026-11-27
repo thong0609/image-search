@@ -12,7 +12,9 @@ Mục tiêu cuối: **p90 toàn pipeline < 300 ms**. Đánh giá chất lượng
 | 5 | Thực thi kế hoạch: graph, visual bridge, danh sách kết quả | Đã có; một số quan hệ chưa hỗ trợ |
 | 6 | Reranking | Chưa triển khai |
 | 7 | Đánh giá, tối ưu chất lượng và độ trễ | Đang làm; SLO chưa đạt |
-| 8 | API/website, đăng nhập | Có màn hình demo tìm ảnh và playground local; chưa có đăng nhập, quản trị |
+| 8 | API/website, đăng nhập | Đã có tìm kiếm/filter/phân trang, đăng nhập, tài khoản và gỡ ảnh; đã có nhập CSV, batch worker và công bố snapshot mới |
 
 Chi tiết: [luồng tìm kiếm](../design/search-pipeline.md), [kết quả](../evaluation/results.md),
 [quyết định](decisions.md).
+
+Triển khai website ngày 26/11/2026: [hướng dẫn và phạm vi còn lại](../guides/website.md).

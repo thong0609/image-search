@@ -61,6 +61,7 @@ function Library() {
       <nav className="flex gap-5 border-b pb-4">
         <Link href="/admin">Tài khoản</Link>
         <Link href="/admin/images">Kho ảnh</Link>
+        <Link href="/admin/imports">Nhập CSV</Link>
       </nav>
       <p className="text-muted-foreground">
         Ảnh đã gỡ không còn xuất hiện trong kết quả mới và không thể xem hoặc

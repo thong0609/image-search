@@ -1,5 +1,11 @@
 # Hợp đồng API MVP
 
+Cập nhật triển khai website 27/11/2026: auth/account, filters, snapshot, quản trị gỡ ảnh và nhập CSV
+theo batch đã có. Luồng CSV có API preview/upload, tiến độ, errors.csv và retry.
+API tìm kiếm giữ `groups` của luồng hiện hành; ảnh gốc qua proxy bearer thay signed URL.
+Xem [hướng dẫn website](../guides/website.md); hợp đồng manifest import, crawl, maintenance đầy đủ và VLM bên dưới vẫn là đặc tả;
+không coi chúng là endpoint đã hoàn thành.
+
 Trạng thái: đặc tả đề xuất v0.1, chưa phải API đã triển khai. Prefix `/v1`; JSON UTF-8; thời gian ISO 8601 UTC. Giới hạn cấu hình được nêu để review, không phải giá trị đã benchmark.
 
 Cập nhật 05/11/2026: search metadata đọc từ Qdrant payload; DB quan hệ kiểm tra lifecycle/published point và tài khoản/role theo chức năng. Thiết kế lưu trữ thay đổi không làm đổi public request/response dưới đây.

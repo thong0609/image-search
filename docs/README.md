@@ -4,6 +4,7 @@
 |---|---|---|
 | Báo cáo | [Báo cáo kỹ thuật](technical-report.md) | Toàn hệ thống: kỹ thuật, lý do chọn, lỗi, hạn chế, đề xuất |
 | Hướng dẫn | [Dữ liệu và baseline](guides/data-and-baseline.md) | Đọc CSV, tải ảnh, gán nhãn, lập index, chạy baseline |
+| | [Website](guides/website.md) | Khởi tạo tài khoản, catalog, quyền và chạy website local |
 | | [Tìm kiếm](guides/search.md) | Planner, retrieval, playground, đánh giá |
 | | [Graph](guides/graph.md) | Dựng và nhập graph quan hệ Neo4j |
 | Thiết kế hiện tại | [Luồng tìm kiếm](design/search-pipeline.md) | Planner, visual bridge, danh sách kết quả |
