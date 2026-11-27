@@ -11,8 +11,10 @@ from threading import Lock
 from PIL import Image, ImageOps
 
 from image_search.planner.cache import PlanCache, normalize_query
+from image_search.planner.heuristic import Decision, HeuristicPlanner
 from image_search.planner.schemas import QueryPlan
 from image_search.planner.settings import PlannerSettings
+from image_search.timing import profile_result, span, timed
 
 THUMBNAIL_SIZE = (640, 480)
 
@@ -27,6 +29,7 @@ class SearchService:
         self.images = {}
         self.library = None
         self.index = None
+        self.local_planner = HeuristicPlanner()
         self.plans = PlanCache(PlannerSettings().cache_size)
 
     def load(self, needs_encoder=True):
@@ -64,6 +67,9 @@ class SearchService:
             engine, corpus, index = load_engine(embedding, retrieval, graph_settings=graph_settings)
             self.engine = engine
             self.index = index
+            self.local_planner = HeuristicPlanner(
+                getattr(engine.graph_store, "planner_entities", ())
+            )
             self.images = {r["image_id"]: Path(r["local_path"]) for r in corpus["images"]}
         if self.library is not None:
             self.library.validate_index(self.index)
@@ -77,11 +83,25 @@ class SearchService:
             vectors, _ = self.encoder.encode_texts(["ảnh"])
             self.engine.search("ảnh", vectors[0], "hybrid", 1)
 
-    def plan(self, text):
+    def local_plan(self, text):
+        if PlannerSettings().local_mode == "off":
+            return Decision(None, "disabled")
+        # Refresh active snapshot before using its names. No per-query graph name lookup.
+        with self.lock:
+            self.load(False)
+            return self.local_planner.decide(text)
+
+    @timed("planner_ms")
+    def plan(self, text, diagnostics=None):
         """(Kế hoạch hoặc None nếu planner không dùng được, có lấy từ cache không)."""
         from image_search.planner.router import PROMPT, make_client, route_query
 
         settings = PlannerSettings()
+        decision = self.local_plan(text)
+        if diagnostics is not None:
+            diagnostics.update(decision.metadata())
+        if decision.plan is not None:
+            return decision.plan, False
 
         def create():
             with make_client(settings) as client:
@@ -102,14 +122,20 @@ class SearchService:
     def retrieve(self, text, plan, method="hybrid", filters=None):
         from image_search.retrieval.listing import search_list
 
+        waiting = time.perf_counter()
         with self.lock:
+            wait_ms = (time.perf_counter() - waiting) * 1000
+            prepared = time.perf_counter()
             self.load(method != "keyword")
             engine = copy.copy(self.engine)
             if self.library is not None:
                 engine.visible_images = self.library.visible()
             if filters:
                 engine.filtered_images = self.matching_images(filters)
-            return search_list(engine, self.encoder, text, plan, method)
+            prepare_ms = (time.perf_counter() - prepared) * 1000
+            result = search_list(engine, self.encoder, text, plan, method)
+            result["timing_ms"].update(queue=wait_ms, preparation=prepare_ms)
+            return result
 
     def records_for(self, image_id, scope):
         """Record thuộc nơi chứa; ảnh từ câu tìm chung có thể nằm ngoài phạm vi đó."""
@@ -145,9 +171,12 @@ class SearchService:
             result.add(iid)
         return result
 
+    @profile_result
     def search(self, text, filters=None):
         started = time.perf_counter()
-        plan, cached = self.plan(text)
+        planner = {}
+        with span("plan_total_ms"):
+            plan, cached = self.plan(text, diagnostics=planner)
         result = (
             self.retrieve(text, plan, filters=filters) if filters else self.retrieve(text, plan)
         )
@@ -182,6 +211,8 @@ class SearchService:
             "question": result.get("question"),
             "planned": plan is not None,
             "plan_cached": cached,
+            "planner": {**planner, "cached": cached},
+            "timing_ms": result.get("timing_ms", {}),
             "groups": groups,
             "took_ms": (time.perf_counter() - started) * 1000,
         }

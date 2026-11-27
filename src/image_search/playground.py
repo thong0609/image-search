@@ -31,8 +31,35 @@ class PlaygroundService:
 
         started = time.perf_counter()
         settings = PlannerSettings()
-        with make_client(settings) as client:
-            planner = route_query(text, settings, client)
+        decision = self.search.local_plan(text) if settings.local_mode == "heuristic" else None
+        if decision is not None and decision.plan is not None:
+            planner = {
+                "text": text,
+                "status": "ok",
+                "plan": decision.plan.model_dump(),
+                "draft": None,
+                "error_code": None,
+                "model_requested": None,
+                "model_returned": None,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cached_input_tokens": 0,
+                "estimated_cost_usd": 0,
+                "latency_ms": (time.perf_counter() - started) * 1000,
+                **decision.metadata(),
+            }
+        else:
+            with make_client(settings) as client:
+                planner = route_query(text, settings, client)
+            planner.update(
+                decision.metadata()
+                if decision
+                else {
+                    "route": "llm",
+                    "reason": "disabled",
+                    "version": None,
+                }
+            )
         # Kết quả chẩn đoán không chứa credentials hoặc đường dẫn file ảnh.
         result = {
             "text": text,

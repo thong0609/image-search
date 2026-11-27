@@ -7,6 +7,7 @@ from neo4j import Query
 from image_search.adapters.qdrant.metadata import name_key
 from image_search.graph.build import validate_graph
 from image_search.graph.extraction import digest
+from image_search.timing import timed
 
 RELATIONS = ("LOCATED_IN", "PART_OF", "BRANCH_OF")
 
@@ -43,6 +44,7 @@ class GraphStore:
         self.snapshot, self.dataset = metadata_hash, settings.dataset_id
         self.graph_hash = None
 
+    @timed("graph_ms")
     def read(self, query, **parameters):
         result = self.driver.execute_query(
             Query(query, timeout=self.settings.timeout),
@@ -112,6 +114,7 @@ class GraphStore:
         graph = self.export()
         validate_mapping(graph, index, payloads)
         self.graph_hash = graph["graph_sha256"]
+        self.planner_entities = graph["entities"]
         return {
             "nodes": {"Image": len(graph["image_ids"]), "Entity": len(graph["entities"])},
             "relationships": {

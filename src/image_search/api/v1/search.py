@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 import unicodedata
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -78,6 +79,8 @@ class SearchResponse(BaseModel):
     plan_cached: bool = Field(description="Dùng lại kế hoạch của câu đã hỏi, không gọi model")
     groups: list[SearchGroup]
     took_ms: float
+    planner: dict[str, Any] = Field(default_factory=dict)
+    timing_ms: dict[str, float] = Field(default_factory=dict)
 
 
 def get_search(request: Request):
@@ -95,6 +98,7 @@ Service = Annotated[Any, Depends(get_search)]
 
 @router.post("/search")
 def search(body: SearchQuery, request: Request, service: Service) -> SearchResponse:
+    started = time.perf_counter()
     try:
         owner = request.headers.get("x-search-owner", "")
         library = service.library
@@ -135,6 +139,7 @@ def search(body: SearchQuery, request: Request, service: Service) -> SearchRespo
                             source_url=record.get("page_url") or None,
                             source_name=record.get("image_domain") or None,
                         )
+        result.setdefault("timing_ms", {})["request_ms"] = (time.perf_counter() - started) * 1000
         return {**result, "request_id": request.state.request_id}
     except HTTPException:
         raise

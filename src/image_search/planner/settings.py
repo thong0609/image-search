@@ -19,6 +19,7 @@ class PlannerSettings(BaseSettings):
     # None: mặc định của model. 'low' giảm độ trễ và nguy cơ hết token vì suy luận dài.
     reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = "low"
     # Số kế hoạch giữ trong RAM cho màn hình tìm ảnh; 0 là tắt.
+    local_mode: Literal["off", "heuristic"] = "off"
     cache_size: int = Field(default=1000, ge=0, le=100_000)
     max_query_chars: int = Field(default=4000, ge=1, le=20000)
     # Giá USD / 1M tokens do người chạy cung cấp; không hard-code giá nhà cung cấp.

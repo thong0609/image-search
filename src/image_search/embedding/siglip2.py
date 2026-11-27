@@ -9,6 +9,7 @@ from PIL import Image
 
 from image_search.embedding.encoder import load_encoder, normalize, processor_hash
 from image_search.embedding.index import load_index
+from image_search.timing import timed
 
 
 class Siglip2Embedding:
@@ -30,6 +31,7 @@ class Siglip2Embedding:
         self.dimensions = self.vector_store.dimensions
         self.max_length = self.model.config.text_config.max_position_embeddings
 
+    @timed("embedding_ms")
     def encode_texts(self, texts):
         if not texts or any(not isinstance(t, str) or not t.strip() for t in texts):
             raise ValueError("Danh sách text rỗng hoặc có text không hợp lệ")

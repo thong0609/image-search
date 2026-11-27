@@ -5,6 +5,8 @@ from uuid import NAMESPACE_URL, uuid5
 import numpy as np
 from qdrant_client import models
 
+from image_search.timing import timed
+
 
 def point_id(image_id):
     return str(uuid5(NAMESPACE_URL, f"image-search:{image_id}"))
@@ -111,6 +113,7 @@ class QdrantVectors:
             )
         return models.Filter(must=must)
 
+    @timed("qdrant_filter_ms")
     def filtered_ids(self, eligible=None, entity_ids=None):
         if eligible is not None and not eligible or entity_ids is not None and not entity_ids:
             return set()
@@ -128,6 +131,7 @@ class QdrantVectors:
             if offset is None:
                 return result
 
+    @timed("qdrant_ms")
     def search(self, vector, limit, eligible=None, entity_ids=None):
         if eligible is not None and not eligible or entity_ids is not None and not entity_ids:
             return []

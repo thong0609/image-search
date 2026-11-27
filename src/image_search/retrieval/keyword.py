@@ -7,6 +7,8 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 
+from image_search.timing import timed
+
 FIELDS = ["entity_name", "leaf_label", "page_title", "mo_ta"]
 TOKENIZER_VERSION = "unicode-nfkd;lower;fold-vietnamese;alphanumeric;v1"
 
@@ -71,6 +73,7 @@ def build_keyword_index(records, image_ids, k1, b):
     return prepare_bm25(documents, k1, b), metadata
 
 
+@timed("bm25_ms")
 def keyword_search(text, index, top_k):
     import numpy as np
 
@@ -96,6 +99,7 @@ def keyword_search(text, index, top_k):
     return [{"image_id": index["image_ids"][i], "score": float(scores[i])} for i in order[:top_k]]
 
 
+@timed("fusion_ms")
 def fuse_rankings(rankings, top_k, rrf_k):
     """RRF chuẩn, trọng số bằng nhau: mỗi nhánh đóng góp 1 / (k + rank), rank bắt đầu từ 1."""
     if rrf_k <= 0 or top_k < 1:
