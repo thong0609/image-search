@@ -20,4 +20,6 @@ export type SearchResponse = {
   plan_cached: boolean;
   groups: SearchGroup[];
   took_ms: number;
+  next_cursor: string | null;
+  request_id: string;
 };
