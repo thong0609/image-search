@@ -100,7 +100,7 @@ def search_index(
         if method != "vector":
             keyword_results = keyword_search(query["text"], keyword_index, count)
         if method == "hybrid":
-            return fuse_rankings(vector_results, keyword_results, top_k, rrf_k)
+            return fuse_rankings([vector_results, keyword_results], top_k, rrf_k)
         return keyword_results if method == "keyword" else vector_results
 
     retrieve(queries[0])  # Warmup không tính vào độ trễ.

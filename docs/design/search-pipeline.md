@@ -22,6 +22,13 @@ flowchart LR
 | Ghép danh sách | `retrieval/listing.py` |
 | Vector, BM25, RRF | `retrieval/engine.py`, `retrieval/keyword.py` |
 
+Hybrid có công tắc `IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS`: khi bật, thêm một bảng xếp hạng từ
+vector SigLIP2 của `entity_name. mo_ta` vào RRF với trọng số bằng nhau (1:1:1, `k=60`). Mỗi record
+có vector riêng trong Qdrant; điểm ảnh là điểm cao nhất của các record hợp lệ. Khi lọc theo nơi,
+chỉ record thuộc nơi đó được tính. Label và tiêu đề trang vẫn nằm trong BM25. Không encode thêm
+câu hỏi, không thêm model. Mặc định tắt: hybrid giữ hai nhánh ảnh và BM25 (1:1).
+Kết quả A/B và giới hạn ở [đánh giá](../evaluation/results.md).
+
 ## Planner
 
 Prompt `planner-draft-scope-v6`, GPT-5 mini. Model **không** trả loại câu, bước hoặc dependency; chỉ
@@ -40,6 +47,18 @@ Prompt `planner-draft-scope-v6`, GPT-5 mini. Model **không** trả loại câu,
 `query_type`: single, multi-target, multi-hop hoặc unclear. Giới hạn 5 mục tiêu, 12 bước. Thiếu ngữ
 cảnh thiết yếu ("ảnh vừa rồi") thì hỏi lại. Plan sai được ghi lỗi kèm `raw_output`, không đổi thành
 route khác.
+
+### Cache kế hoạch
+
+Màn hình tìm ảnh giữ kế hoạch trong RAM (`planner/cache.py`, `IMAGE_SEARCH_PLANNER_CACHE_SIZE`, mặc định
+1.000, 0 là tắt; bỏ câu lâu không dùng trước). Khóa gồm câu hỏi, prompt, model và mức suy luận.
+
+- Gộp khác biệt về khoảng trắng, dấu câu cuối và dạng Unicode. Giữ dấu và chữ hoa/thường vì prompt dựa
+  vào chữ hoa để nhận tên riêng.
+- Chỉ lưu kế hoạch, không lưu ảnh; lỗi không được lưu. Câu trùng đang chạy dùng chung một lượt gọi.
+- Mất khi khởi động lại. Playground và lệnh đo không dùng cache. `/v1/search` trả `plan_cached`.
+
+Đo một câu single: lần đầu 15,8 giây; lặp lại 30 lượt p50/p90 200/239 ms, cùng kết quả.
 
 ## Xác định nơi chứa
 

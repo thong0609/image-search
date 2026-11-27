@@ -14,7 +14,7 @@ from image_search.search import SearchService
 @pytest.fixture
 def service(tmp_path):
     service = SearchService(tmp_path / "thumbnails")
-    service.plan = Mock(return_value=None)
+    service.plan = Mock(return_value=(None, False))
     service.retrieve = Mock(
         return_value={
             "groups": [
@@ -78,9 +78,10 @@ def test_fallback_group_is_marked_approximate(client, service):
 
 def test_clarification_question_is_returned_without_images(client, service):
     service.retrieve.return_value = {"question": "Nơi nào?", "groups": []}
-    service.plan.return_value = Mock(spec=QueryPlan)
+    service.plan.return_value = (Mock(spec=QueryPlan), True)
     body = client.post("/v1/search", json={"query": "ảnh vừa rồi"}).json()
     assert body["question"] == "Nơi nào?" and body["groups"] == []
+    assert body["planned"] and body["plan_cached"]
 
 
 def test_failure_does_not_expose_configuration(client, service):
@@ -92,7 +93,7 @@ def test_failure_does_not_expose_configuration(client, service):
 def test_planner_without_key_falls_back_to_whole_query(tmp_path, monkeypatch):
     pytest.importorskip("openai")
     monkeypatch.setenv("OPENAI_API_KEY", "")
-    assert SearchService(tmp_path).plan("chợ") is None
+    assert SearchService(tmp_path).plan("chợ") == (None, False)
 
 
 def test_only_corpus_images_are_served_and_thumbnails_are_bounded(client, service, tmp_path):

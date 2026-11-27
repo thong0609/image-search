@@ -37,6 +37,19 @@ HF_HUB_OFFLINE=1 uv run image-search-retrieval var/planner-new/predictions.jsonl
   hoạch, không lấp bằng tìm cả câu; `--aliases` nhận JSON alias → danh sách entity ID.
 - Mỗi phương pháp có `predictions.jsonl`, `timings.jsonl`, `report.json`, `results.html`.
 - Cấu hình `IMAGE_SEARCH_RETRIEVAL_*` và `IMAGE_SEARCH_EMBEDDING_*` trong `.env.example`.
+- `IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS` mặc định `false`. Đặt `true` để thêm nhánh tên + mô tả
+  vào hybrid, dùng lại vector câu hỏi SigLIP2. Cần nạp `image-search-qdrant --sync-text` trước; `false` dùng hai nhánh cũ.
+  `vector`, `keyword` và baseline tìm cả câu không thêm nhánh text. `run.json` ghi cấu hình bật/tắt
+  và `text_metadata` để đối chiếu snapshot.
+
+Đo A/B cùng plan, không gọi OpenAI (dùng hai thư mục output mới):
+
+```bash
+HF_HUB_OFFLINE=1 IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS=false uv run image-search-retrieval var/list-v1/v3.jsonl --method hybrid --rounds 3 --output-dir var/text-ab-off
+HF_HUB_OFFLINE=1 IMAGE_SEARCH_RETRIEVAL_TEXT_VECTORS=true uv run image-search-retrieval var/list-v1/v3.jsonl --method hybrid --rounds 3 --output-dir var/text-ab-on
+uv run python scripts/evaluate_retrieval.py var/text-ab-off --queries var/multihop-v3/queries.jsonl --answers var/multihop-v3/answers.jsonl
+uv run python scripts/evaluate_retrieval.py var/text-ab-on --queries var/multihop-v3/queries.jsonl --answers var/multihop-v3/answers.jsonl
+```
 
 ## Đánh giá
 
@@ -55,7 +68,8 @@ cd frontend && npm run dev   # http://127.0.0.1:3000
 ```
 
 - `/`: nhập câu hỏi, xem lưới ảnh theo từng mục tiêu, bấm ảnh để xem chi tiết và trang nguồn. Câu nằm
-  trong URL (`?q=`). Mỗi câu mới gọi OpenAI; quay lại câu cũ dùng kết quả đã có trong trình duyệt.
+  trong URL (`?q=`). Câu mới gọi OpenAI; câu đã hỏi dùng lại
+  [kế hoạch trong cache](../design/search-pipeline.md#cache-kế-hoạch) của backend.
 - `/playground`: xem kế hoạch, token và thời gian từng bước.
 - Model và index nạp ở lượt tìm đầu tiên (khoảng 10 giây thêm). Không cần PostgreSQL. Chưa có đăng nhập
   hoặc quản trị; chỉ chạy local.
@@ -71,5 +85,5 @@ cd frontend && npm run dev   # http://127.0.0.1:3000
 
 `/v1/search` trả `groups` (mỗi mục tiêu: `label`, `approximate`, `items` gồm `id`, `title`, `caption`,
 kích thước, `source_url`, `source_name`), `question` khi cần làm rõ, `planned=false` khi planner lỗi và
-chỉ tìm bằng nguyên câu. Lỗi hạ tầng trả 503, không lộ chi tiết. Đây là bản demo, rút gọn so với
+chỉ tìm bằng nguyên câu. `plan_cached=true` khi dùng lại kế hoạch của câu đã hỏi. Lỗi hạ tầng trả 503, không lộ chi tiết. Đây là bản demo, rút gọn so với
 [đặc tả API](../design/api-contract.md): chưa có bộ lọc, phân trang và đăng nhập.

@@ -96,12 +96,12 @@ def keyword_search(text, index, top_k):
     return [{"image_id": index["image_ids"][i], "score": float(scores[i])} for i in order[:top_k]]
 
 
-def fuse_rankings(vector_results, keyword_results, top_k, rrf_k):
-    """RRF chuẩn: mỗi nhánh đóng góp 1 / (k + rank), rank bắt đầu từ 1."""
+def fuse_rankings(rankings, top_k, rrf_k):
+    """RRF chuẩn, trọng số bằng nhau: mỗi nhánh đóng góp 1 / (k + rank), rank bắt đầu từ 1."""
     if rrf_k <= 0 or top_k < 1:
         raise ValueError("Cấu hình RRF không hợp lệ")
     scores = defaultdict(float)
-    for results in [vector_results, keyword_results]:
+    for results in rankings:
         seen = set()
         rank = 0
         for row in results:

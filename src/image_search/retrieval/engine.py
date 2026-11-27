@@ -1,4 +1,4 @@
-"""Tìm trong phạm vi graph và Qdrant trước top-K, gộp RRF chuẩn 1:1."""
+"""Tìm trong phạm vi graph và Qdrant trước top-K, gộp RRF trọng số bằng nhau."""
 
 import numpy as np
 
@@ -7,7 +7,16 @@ from image_search.retrieval.keyword import fuse_rankings, keyword_search
 
 
 class RetrievalEngine:
-    def __init__(self, image_ids, vector_store, keyword_index, catalog, settings, graph_store):
+    def __init__(
+        self,
+        image_ids,
+        vector_store,
+        keyword_index,
+        catalog,
+        settings,
+        graph_store,
+        text_store=None,
+    ):
         if len(image_ids) != len(set(image_ids)):
             raise ValueError("Image index bị trùng")
         self.image_ids = image_ids
@@ -16,6 +25,8 @@ class RetrievalEngine:
         self.catalog = catalog
         self.settings = settings
         self.graph_store = graph_store
+        # Vector tên + mô tả, chỉ tham gia hybrid; None là tắt nhánh này.
+        self.text_store = text_store
 
     def search(self, text, vector, method, limit, entity_ids=None):
         """entity_ids=None: toàn kho; tập rỗng: không có phạm vi hợp lệ."""
@@ -45,7 +56,10 @@ class RetrievalEngine:
                 sparse = [r for r in sparse if r["image_id"] in allowed]
             sparse = sparse[:count]
         if method == "hybrid":
-            return fuse_rankings(dense, sparse, limit, self.settings.rrf_k)
+            rankings = [dense, sparse]
+            if self.text_store is not None:
+                rankings.append(self.text_store.search(vector, count, eligible, entity_ids))
+            return fuse_rankings(rankings, limit, self.settings.rrf_k)
         return (sparse if method == "keyword" else dense)[:limit]
 
     def execute(self, plan, method="hybrid", vectors=None):

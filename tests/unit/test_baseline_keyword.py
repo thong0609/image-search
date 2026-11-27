@@ -65,25 +65,25 @@ def test_bm25_ties_are_stable_by_image_id():
 def test_rrf_uses_ranks_instead_of_raw_score_scales():
     vector = [{"image_id": "a", "score": 0.9}, {"image_id": "b", "score": 0.8}]
     keyword = [{"image_id": "b", "score": 100}, {"image_id": "a", "score": 1}]
-    results = fuse_rankings(vector, keyword, 2, 60)
+    results = fuse_rankings([vector, keyword], 2, 60)
     assert [r["image_id"] for r in results] == ["a", "b"]
     assert results[0]["score"] == pytest.approx(1 / 61 + 1 / 62)
     assert results[1]["score"] == results[0]["score"]
-    assert fuse_rankings(vector, [], 2, 60)[0]["score"] == pytest.approx(1 / 61)
-    assert fuse_rankings([], keyword, 2, 60)[0]["image_id"] == "b"
-    assert fuse_rankings(vector + vector, keyword, 10, 60) == results
+    assert fuse_rankings([vector, []], 2, 60)[0]["score"] == pytest.approx(1 / 61)
+    assert fuse_rankings([[], keyword], 2, 60)[0]["image_id"] == "b"
+    assert fuse_rankings([vector + vector, keyword], 10, 60) == results
 
 
 def test_rrf_adds_votes_only_from_branches_containing_the_image():
-    results = fuse_rankings([{"image_id": "a"}], [{"image_id": "b"}], 10, 60)
+    results = fuse_rankings([[{"image_id": "a"}], [{"image_id": "b"}]], 10, 60)
     assert results == [{"image_id": "a", "score": 1 / 61}, {"image_id": "b", "score": 1 / 61}]
-    assert fuse_rankings([], [], 10, 60) == []
+    assert fuse_rankings([[], []], 10, 60) == []
 
 
 @pytest.mark.parametrize("top_k,rrf_k", [(0, 60), (10, 0)])
 def test_rrf_rejects_invalid_parameters(top_k, rrf_k):
     with pytest.raises(ValueError, match="RRF"):
-        fuse_rankings([], [], top_k, rrf_k)
+        fuse_rankings([[], []], top_k, rrf_k)
 
 
 def test_keyword_index_is_built_in_memory_from_records():
