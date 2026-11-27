@@ -70,6 +70,13 @@ class SearchService:
         if needs_encoder and self.encoder is None:
             self.encoder = Siglip2Embedding(embedding, collection=retrieval.qdrant_collection)
 
+    def prepare(self):
+        """Load corpus/BM25/graph/model and warm inference before accepting searches."""
+        with self.lock:
+            self.load()
+            vectors, _ = self.encoder.encode_texts(["ảnh"])
+            self.engine.search("ảnh", vectors[0], "hybrid", 1)
+
     def plan(self, text):
         """(Kế hoạch hoặc None nếu planner không dùng được, có lấy từ cache không)."""
         from image_search.planner.router import PROMPT, make_client, route_query

@@ -13,7 +13,7 @@ from image_search.search import SearchService
 
 @pytest.fixture
 def api(tmp_path):
-    app = create_app(Settings(storage_root=tmp_path))
+    app = create_app(Settings(storage_root=tmp_path, preload_search=False))
     service = Mock()
     app.dependency_overrides[admin_user] = lambda: {"role": "admin"}
     app.dependency_overrides[get_playground] = lambda: service

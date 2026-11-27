@@ -25,7 +25,7 @@ PASSWORD = "test-only-password-1234"
 
 @pytest.fixture
 def accounts(tmp_path):
-    settings = Settings(auth_private_key=tmp_path / "private.pem")
+    settings = Settings(auth_private_key=tmp_path / "private.pem", preload_search=False)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     settings.auth_private_key.write_bytes(
         key.private_bytes(

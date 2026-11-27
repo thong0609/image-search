@@ -138,3 +138,15 @@ Trong lúc worker xử lý một lượt nhập, tạm chặn ghi kho ảnh mớ
 trong hàng đợi. Gate ghi giữ bền trong PostgreSQL nếu worker crash và được gỡ khi worker tiếp tục
 hoàn tất/thất bại có kiểm soát. Search tiếp tục đọc snapshot hiện hành; khi active config đổi, các
 snapshot phân trang cũ trả SEARCH_EXPIRED. Có thể có request đang tìm nhận lỗi cần tìm lại tại cutover.
+
+## Chuẩn bị tìm kiếm khi API khởi động
+
+Mặc định API nạp catalog/BM25/graph và SigLIP2 vào RAM ngay khi process khởi động, rồi warmup một lượt
+embedding văn bản + retrieval. Warmup không gọi planner hoặc mã hóa lại kho ảnh. Mỗi process có runtime
+riêng. `/health/live` vẫn hoạt động trong lúc chuẩn bị; `/health/ready` trả 503 tới khi runtime sẵn sàng.
+`/health/search` trả trạng thái `preparing`, `ready` hoặc `failed`, không lộ chi tiết nội bộ.
+
+Website hiển thị một biểu tượng xoay khi chờ backend; chuẩn bị xong tự hiển thị giao diện mà không có
+thông báo thành công. Các API search/playground trả 503 + Retry-After nếu bị gọi trước khi sẵn sàng.
+Nếu chuẩn bị thất bại, readiness không báo thành công; kiểm tra cấu hình/dịch vụ và khởi động lại API
+sau khi sửa nguyên nhân. `IMAGE_SEARCH_PRELOAD_SEARCH=false` chỉ dùng để tách inference khỏi test.

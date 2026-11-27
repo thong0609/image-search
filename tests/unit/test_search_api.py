@@ -51,7 +51,7 @@ def record(entity, **values):
 
 @pytest.fixture
 def client(tmp_path, service):
-    app = create_app(Settings(storage_root=tmp_path))
+    app = create_app(Settings(storage_root=tmp_path, preload_search=False))
     app.dependency_overrides[get_search] = lambda: service
     with TestClient(app) as client:
         yield client
