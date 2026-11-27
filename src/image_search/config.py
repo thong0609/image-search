@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     storage_root: Path = Path("var/objects")
     log_level: str = "INFO"
+    auth_private_key: Path = Path("var/auth/private.pem")
+    auth_cookie_secure: bool = False
+    auth_origins: list[str] = ["http://127.0.0.1:3000", "http://localhost:3000"]
 
 
 def configure_logging(level: str) -> None:
